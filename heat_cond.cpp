@@ -12,7 +12,7 @@ typedef vector<vector<size_t> > vec2i;
 typedef vector<double> vec1d;
 typedef vector<size_t> vec1i;
 
-const double PI = 3.141592653589793;
+const double PI = 3.141592653589793238463;
 const double TOLERANCE = 1024 * std::numeric_limits<double>::epsilon();
 // const double TOLERANCE = 1e-6;
 const size_t NS_MAXITER = 20;
@@ -65,6 +65,45 @@ vec1d matAdd(const vec1d &A, const vec1d &B) {
     C[i] = A[i] + B[i];
   }
   return C;
+}
+
+double analyticalError(const vec2d &T, const double L, const double W, const vec1d del_mesh, const vec1d mesh_origin, string filename) {
+  const size_t Nx = T.size()-1-2, Ny = T[0].size()-1-2;
+  const double del_x = del_mesh[0], del_y = del_mesh[1];
+  const double x0 = mesh_origin[0], y0 = mesh_origin[1];
+  const double sinTheta = mesh_origin[2], cosTheta = mesh_origin[3];
+  vec2d xCoord (Ny+2+1, vec1d(Nx+2+1, 0.0));
+  vec2d yCoord (Ny+2+1, vec1d(Nx+2+1, 0.0));
+  for (size_t j = 2; j <= Ny+1; ++j) {
+    for (size_t i = 2; i <= Nx+1; ++i) {
+      double x_local = (i-2)*del_x + del_x/2;
+      double y_local = (j-2)*del_y + del_y/2;
+      xCoord[j][i] = x0 + (x_local) * cosTheta - (y_local) * sinTheta;
+      yCoord[j][i] = y0 + (x_local) * sinTheta + (y_local) * cosTheta;
+    }
+  }
+
+  double error = 0.0;
+  double fact = 0.0;
+  const double T2 = 100.0, T1 = 200.0;
+
+  vec2d T_ana(Ny+2 + 1, vec1d(Nx+2 + 1, 0.0));
+  for (size_t j = 2; j <= Ny+1; ++j) {
+    for (size_t i = 2; i <= Nx+1; ++i) {
+      fact = 0.0;
+      for (size_t k = 1; k <= 100; ++k) {
+        fact = fact + (pow(-1, k+1) + 1)/k * sin(k*PI*xCoord[j][i]/L) * sinh(k*PI*yCoord[j][i]/L) / sinh(k*PI*W/L);
+      }
+      T_ana[j][i] = T1 + (T2-T1) * 2/PI * fact;
+      // double temp_ana = T1 + (T2-T1) * 2/PI * fact;
+      error = error + pow(T_ana[j][i] - T[j][i], 2.0);
+    }
+  }
+  vecToText(T_ana, filename);
+  // vecToText(xCoord, "./xCoord.txt");
+  // vecToText(yCoord, "./yCoord.txt");
+  return pow(error, 0.5);
+  // return error;
 }
 
 vec1d solveAxB(const vec2d &A, const vec1d &B) {
@@ -291,22 +330,23 @@ double rmsT(const vec2d &Tn, const vec2d &Tn1) {
     }
   }
   rms_T = rms_T / (Nx * Ny);
-  return rms_T;
+  return pow(rms_T, 0.5);
 }
 
 void solver() {
   // Grid discretization AND Domain 
-  const size_t Nx = 160, Ny = 160;
+  const size_t Nx = 10, Ny = 10;
   const double L = 5.0, W = 5.0;
 
   const double x2 = L/3, y2 = W/3, theta = -25.0 * PI/180.0;
-  const size_t Nx2 = 48, Ny2 = 48;
   const double L2 = 1.5, W2 = 1.5;
+  const size_t Nx2 = L2/L*Nx, Ny2 = W2/W*Ny;
 
   const double del_x = L / Nx, del_y = W / Ny;
   const double del_x2 = L2 / Nx2, del_y2 = W2 / Ny2;
   const double cosTheta = cos(theta), sinTheta = sin(theta);
   
+  const vec1d mesh1_origin = {0.0, 0.0, 0.0, 1.0};
   const vec1d mesh2_origin = {x2, y2, sinTheta, cosTheta};
   const vec1d del_mesh = {del_x, del_y};
   const vec1d del_mesh2 = {del_x2, del_y2};
@@ -350,14 +390,17 @@ void solver() {
     n += 1;
     Tn = Tn1;
     T2n = T2n1;
-    if (n % 5000 == 0){
+    if (n % 10000 == 0){
       cout << "Iterations = " << n << " RMS_T = " <<  rms_T << " RMS_T2 = " <<  rms_T2 << "\n";
     }
   }
-  cout << "Total Iterations = " << n << '\n';
+
+  cout << "Mesh 1 error - >" << analyticalError(Tn1, L, W, del_mesh, mesh1_origin, "./ana_mesh1.txt") << endl;
+  cout << "Mesh 2 error - >" << analyticalError(T2n1, L, W, del_mesh2, mesh2_origin, "./ana_mesh2.txt") << endl;
+  cout << "Total Iterations = " << n << endl;
   
-  vecToText(Tn1, "./mesh1.txt");
-  vecToText(T2n1, "./mesh2.txt");
+  vecToText(Tn1, "./num_mesh1.txt");
+  vecToText(T2n1, "./num_mesh2.txt");
 }
 
 int main() {
