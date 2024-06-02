@@ -5,10 +5,15 @@
 #include <sstream>
 #include <array>
 #include <cassert>
-
+#include <iomanip> 
+#include <queue> 
+#include <numeric> 
+#include <random>
+#include <algorithm>
 #include <limits>
 
-using std::vector, std::array;
+using std::vector, std::array, std::queue;
+using std::iota, std::shuffle;
 using std::string;
 using std::ifstream, std::istringstream;
 using std::cout, std::cin, std::cerr, std::endl;
@@ -19,7 +24,7 @@ constexpr su2double su2double_lowest = std::numeric_limits<su2double>::lowest();
 constexpr su2double su2double_highest = std::numeric_limits<su2double>::max();
 
 const int SU2_CONN_SIZE   = 10;  /*!< \brief Size of the connectivity array that is allocated for each element*/
-const int SU2_BBOX_SIZE   = 8;  /*!< \brief Size of the bounding box array that is allocated for each element*/
+const int SU2_BBOX_SIZE   = 4;  /*!< \brief Size of the bounding box array that is allocated for each element*/
 
 enum GEO_TYPE {
   VERTEX = 1,         /*!< \brief VTK nomenclature for defining a vertex element. */
@@ -87,6 +92,75 @@ inline unsigned short nPointsOfElementType(unsigned short elementType) {
   }
 }
 
+class node_adt {
+  public:
+    size_t elementIndex;
+    array<su2double, SU2_BBOX_SIZE> bBoxCoordinates; 
+    node_adt * left;
+    node_adt * right;
+    
+    node_adt(const size_t elementIdx, const array<su2double, SU2_BBOX_SIZE> &bBoxCoords) : elementIndex(elementIdx), bBoxCoordinates(bBoxCoords), left(nullptr), right(nullptr) {}
+    virtual ~node_adt() = default;
+};
+
+class ADT{
+  public:
+    node_adt * root;
+    size_t treeHeirarchy;
+    ADT() : root(nullptr), treeHeirarchy(0) {}
+    virtual ~ADT() = default;
+  
+    void insertNode(node_adt * node) {
+      node_adt * current = root;
+      node_adt * parent = nullptr;
+      size_t elementHeirarchy = 0, i = 0;
+
+      /* Traverse the tree to find the insertion point */
+      while (current != nullptr) {
+        parent = current;
+        /* Heirarchy cycling -> (x_min, y_min, z_min, x_max, y_max, z_max)*/
+        i = elementHeirarchy % 4; /* For 2d cycle with 4 values*/
+        if (current->bBoxCoordinates[i] < node->bBoxCoordinates[i]) {
+          current = current->right;
+        } else {
+          current = current->left;
+        }
+        elementHeirarchy = elementHeirarchy + 1;
+      }
+      if (parent == nullptr) {
+        root = node;
+      } else if (parent->bBoxCoordinates[i] < node->bBoxCoordinates[i]) {
+        parent->right = node;
+      } else {
+        parent->left = node;
+      }
+
+      current = node;
+      treeHeirarchy = max(treeHeirarchy, elementHeirarchy);
+      // cout << "Element added " << current->elementIndex << " at h = " << heirarchy << endl;
+    }
+    
+    /* Level order output ADT */ 
+    void printLevelOrder() {
+      if (root == nullptr) {
+        cerr << "Empty ADT" << endl;
+        return;
+      }
+      queue< node_adt * > q;
+      q.push(root);
+
+      while (q.empty() == false) {
+          node_adt * node = q.front();
+          cout << node->elementIndex << " ";
+          q.pop();
+          if (node->left != nullptr)
+              q.push(node->left);
+          if (node->right != nullptr)
+              q.push(node->right);
+      }
+    }
+};
+
 class SU2Mesh {
   protected:
     size_t dimension = 0;
@@ -103,6 +177,7 @@ class SU2Mesh {
   
     /* layout is [[elementIndex, VTK type, xmin, ymin, zmin, xmax, ymax, zmax]]*/
     vector<su2double> localVolumeElementBoundingBox;
+    ADT adtBoundingBox;
   public:
     SU2Mesh(const string& filename) {
       bool foundNDIME = false, foundNPOIN = false;
@@ -279,10 +354,9 @@ class SU2Mesh {
     void GenerateElementBoundingBox() {
       array<size_t, N_POINTS_HEXAHEDRON> connectivity{};
       
-      // array<su2double, N_POINTS_PRISM> bboxCoordinates{-1.0, -1.0, -1.0, -1.0, -1.0, -1.0};
       for (size_t LocalIndex = 0; LocalIndex < numberOfLocalElements; ++LocalIndex) {  
         /*[xmin, ymin, zmin, xmax, ymax, zmax]*/
-        array<su2double, N_POINTS_PRISM> bboxCoordinates{su2double_highest, su2double_highest, su2double_highest, su2double_lowest, su2double_lowest, su2double_lowest};
+        array<su2double, SU2_BBOX_SIZE> bboxCoordinates{su2double_highest, su2double_highest, su2double_lowest, su2double_lowest};
         
         unsigned short VTK_Type = localVolumeElementConnectivity[LocalIndex*SU2_CONN_SIZE + 1];
         const auto nPointsElem = nPointsOfElementType(VTK_Type);
@@ -293,26 +367,53 @@ class SU2Mesh {
         for (unsigned short iDim = 0; iDim < dimension; iDim++) {
           for (unsigned short i = 0; i < nPointsElem; i++) {
             bboxCoordinates[iDim] = min(bboxCoordinates[iDim], localPointCoordinates[iDim][connectivity[i]]);
-            bboxCoordinates[iDim+3] = max(bboxCoordinates[iDim+3], localPointCoordinates[iDim][connectivity[i]]);
+            bboxCoordinates[iDim+2] = max(bboxCoordinates[iDim+2], localPointCoordinates[iDim][connectivity[i]]); /* +2 for 2D */
           }
         }
 
-        localVolumeElementBoundingBox.push_back(LocalIndex);
-        localVolumeElementBoundingBox.push_back(VTK_Type);
-        for (unsigned short i = 0; i < N_POINTS_PRISM; i++){
+        // localVolumeElementBoundingBox.push_back(LocalIndex);
+        // localVolumeElementBoundingBox.push_back(VTK_Type);
+        for (unsigned short i = 0; i < SU2_BBOX_SIZE; i++){
           localVolumeElementBoundingBox.push_back(bboxCoordinates[i]);
         }
       }
     }
+
+    void TraverseADT() {
+      adtBoundingBox.printLevelOrder();
+    }
+
+    void GenerateADT() {
+      array<su2double, SU2_BBOX_SIZE> bboxCoords{};
+      
+      /* modifying node insertion to balance the tree */
+      vector<size_t> elementOrderADT;
+      elementOrderADT.resize(numberOfLocalElements);
+      iota(elementOrderADT.begin(), elementOrderADT.end(), 0);
+      shuffle(elementOrderADT.begin(), elementOrderADT.end(), std::mt19937{std::random_device{}()});
+
+      for (size_t randomIndex = 0; randomIndex < numberOfLocalElements; ++randomIndex) {
+        size_t LocalIndex = elementOrderADT[randomIndex];
+        for (unsigned short i = 0; i < SU2_BBOX_SIZE; ++i) {
+          bboxCoords[i] = localVolumeElementBoundingBox[LocalIndex*SU2_BBOX_SIZE + i];
+        }
+        node_adt * temp = new node_adt(LocalIndex, bboxCoords);
+        adtBoundingBox.insertNode(temp);
+      }
+      cout << "Max heirarchy : " << adtBoundingBox.treeHeirarchy << endl;
+    }
 };
  
 int main() {
-  SU2Mesh bg_mesh("/Users/zlatangg/Documents/Overset/heat_cond SU2/square_10x10.su2");
-  SU2Mesh comp_mesh("/Users/zlatangg/Documents/Overset/heat_cond SU2/square_3x3.su2");
-  
+  SU2Mesh bg_mesh("/Users/zlatangg/Documents/Overset/overset_mesh/SU2/mesh su2/square_20x20.su2");
+  SU2Mesh comp_mesh("/Users/zlatangg/Documents/Overset/overset_mesh/SU2/mesh su2/square_4x4.su2");
+  cout.width(std::numeric_limits<double>::digits10+2);
+  cout.precision(std::numeric_limits<double>::digits10+2);
   bg_mesh.PrintMeshDetails();
   auto bg_eleConn = bg_mesh.GetLocalVolumeElementConnectivity();
   auto bg_bBox = bg_mesh.GetLocalVolumeElementBoundingBox();
+  bg_mesh.GenerateADT();
+  comp_mesh.GenerateADT();
 
   auto check_num_ele = 4;
   cout << "Element Connectivity -> " << endl;
@@ -331,7 +432,6 @@ int main() {
     }
     cout << endl;
   }
-  // comp_mesh.PrintMeshDetails();
 
   return 0;
 }
