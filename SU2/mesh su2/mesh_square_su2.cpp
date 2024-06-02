@@ -6,6 +6,7 @@
  */
 
 #include <fstream>
+#include <limits>
 
 using namespace std;
 
@@ -14,11 +15,11 @@ void genMesh(const int nNode, const int mNode, const double L, const double W, c
   int KindElem, KindBound;
   int iElem;
   // int nNode, mNode;
-  int iNode, jNode, nPoint, iPoint, jPoint, kPoint;
+  int iNode, jNode, nPoint, iPoint, jPoint, kPoint, lPoint;
   ofstream Mesh_File;
   
   /*--- Set the VTK type for the interior elements and the boundary elements ---*/
-  KindElem  = 5; // Triangle
+  KindElem  = 9; // Quad
   KindBound = 3; // Line
   
   // /*--- Store the number of nodes and output mesh filename ---*/
@@ -32,7 +33,7 @@ void genMesh(const int nNode, const int mNode, const double L, const double W, c
   // double L = 1.0, W = 1.0;
   
   /*--- Open .su2 grid file ---*/
-	Mesh_File.precision(15);
+	Mesh_File.precision(std::numeric_limits<double>::digits10+2);
 	Mesh_File.open("square_"+to_string(nNode-1)+"x"+to_string(mNode-1)+".su2", ios::out);
   
   /*--- Write the dimension of the problem and the number of interior elements ---*/
@@ -43,7 +44,7 @@ void genMesh(const int nNode, const int mNode, const double L, const double W, c
   Mesh_File << "%" << endl;
   Mesh_File << "% Inner element connectivity" << endl;
   Mesh_File << "%" << endl;
-  Mesh_File << "NELEM= " <<  2*(nNode-1)*(mNode-1) << endl;
+  Mesh_File << "NELEM= " <<  (nNode-1)*(mNode-1) << endl;
 
   /*--- Write the element connectivity ---*/
   iElem = 0;
@@ -51,14 +52,10 @@ void genMesh(const int nNode, const int mNode, const double L, const double W, c
     for (iNode = 0; iNode < nNode-1; iNode++) {
       iPoint = jNode*nNode + iNode;
       jPoint = jNode*nNode + iNode + 1;
-      kPoint = (jNode + 1)*nNode + iNode;
-      Mesh_File << KindElem << "\t" << iPoint << "\t" << jPoint << "\t" << kPoint << "\t" << iElem << endl;
+      kPoint = (jNode + 1)*nNode + iNode + 1;
+      lPoint = (jNode + 1)*nNode + iNode ;
+      Mesh_File << KindElem << "\t" << iPoint << "\t" << jPoint << "\t" << kPoint << "\t" << lPoint << "\t" << iElem << endl;
       iElem ++;
-      iPoint = jNode*nNode + (iNode + 1);
-      jPoint = (jNode + 1)*nNode + (iNode + 1);
-      kPoint = (jNode + 1)*nNode + iNode;
-      Mesh_File << KindElem << "\t" << iPoint << "\t" << jPoint << "\t" << kPoint << "\t" << iElem << endl;
-      iElem++;
     }
   }
   
@@ -100,8 +97,8 @@ void genMesh(const int nNode, const int mNode, const double L, const double W, c
   }
   Mesh_File << "MARKER_TAG= left" << endl;
   Mesh_File << "MARKER_ELEMS= "<< (mNode-1) << endl;
-  for (jNode = mNode-2; jNode > mNode-4; jNode--) {
-    Mesh_File << KindBound << "\t" << (jNode + 1)*nNode << "\t" << jNode*nNode << endl;
+  for (jNode = mNode-1; jNode > mNode-4; jNode--) {
+    Mesh_File << KindBound << "\t" << (jNode)*nNode << "\t" << (jNode-1)*nNode << endl;
   }
   
   /*--- Close the mesh file and exit ---*/
@@ -109,9 +106,9 @@ void genMesh(const int nNode, const int mNode, const double L, const double W, c
 }
 
 int main() {
-  int n1 = 11, m1 = 11;
+  int n1 = 101, m1 = 101;
   double l1 = 1.0, w1 = 1.0;
-  int n2 = 4, m2 = 4;
+  int n2 = 31, m2 = 31;
 
   genMesh(n1, m1, l1, w1, 0.0, 0.0);
   genMesh(n2, m2, ((double)(n2-1)/double(n1-1)), ((double)(m2-1)/double(m1-1)), 0.23, 0.36);
