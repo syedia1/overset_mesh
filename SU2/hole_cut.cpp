@@ -11,20 +11,38 @@
 #include <random>
 #include <algorithm>
 #include <limits>
+#include <unordered_set>
+#include <set>
+#include <stack>
 
-using std::vector, std::array, std::queue;
+
+using std::vector, std::array, std::queue, std::stack;
+using std::unordered_set, std::set;
+using std::pair, std::make_pair;
 using std::iota, std::shuffle;
-using std::string;
-using std::ifstream, std::istringstream;
+using std::string, std::to_string;
+using std::ifstream, std::istringstream, std::ofstream;
 using std::cout, std::cin, std::cerr, std::endl;
-using std::min, std::max;
+using std::min, std::max, std::sort;
 using su2double = double;
 
+/**
+ * @brief Tests if the 2 numbers are approximately equal, with the floating point rounding error taken into account.
+ *
+ * @param a Compared value.
+ * @param b Reference value.
+ * @return 1: Approximately equal. 0: Not approximately equal.
+ */
+inline bool floatEqual(double a, double b)
+{
+    double _a = fabs(a), _b = fabs(b);
+    return fabs(a - b) <= ((_a < _b ? _b : _a) * std::numeric_limits<su2double>::epsilon());
+}
 constexpr su2double su2double_lowest = std::numeric_limits<su2double>::lowest();
 constexpr su2double su2double_highest = std::numeric_limits<su2double>::max();
 
-const int SU2_CONN_SIZE   = 10;  /*!< \brief Size of the connectivity array that is allocated for each element*/
-const int SU2_BBOX_SIZE   = 4;  /*!< \brief Size of the bounding box array that is allocated for each element*/
+const size_t SU2_CONN_SIZE   = 10;  /*!< \brief Size of the connectivity array that is allocated for each element*/
+const size_t SU2_BBOX_SIZE   = 4;  /*!< \brief Size of the bounding box array that is allocated for each element*/
 
 enum GEO_TYPE {
   VERTEX = 1,         /*!< \brief VTK nomenclature for defining a vertex element. */
@@ -120,6 +138,10 @@ class ADT{
         parent = current;
         /* Heirarchy cycling -> (x_min, y_min, z_min, x_max, y_max, z_max)*/
         i = elementHeirarchy % 4; /* For 2d cycle with 4 values*/
+        /* node with equal values are put on left branch*/
+        // if (floatEqual(current->bBoxCoordinates[i], node->bBoxCoordinates[i])) {
+        //   current = current->left;
+        // } else 
         if (current->bBoxCoordinates[i] < node->bBoxCoordinates[i]) {
           current = current->right;
         } else {
@@ -129,6 +151,9 @@ class ADT{
       }
       if (parent == nullptr) {
         root = node;
+      // } else if (floatEqual(parent->bBoxCoordinates[i], node->bBoxCoordinates[i])) {
+      //   parent->left = node;
+      // } else 
       } else if (parent->bBoxCoordinates[i] < node->bBoxCoordinates[i]) {
         parent->right = node;
       } else {
@@ -140,8 +165,85 @@ class ADT{
       // cout << "Element added " << current->elementIndex << " at h = " << heirarchy << endl;
     }
     
+    vector<size_t> searchADT(array<su2double, SU2_BBOX_SIZE> &testBBox) const {
+      /*return a vector of indices of elements which intersect with the test bounding box*/
+      size_t currHeirarchy = 0, i = 0;
+      vector<size_t> intersectingBBox;
+      node_adt * current = nullptr;
+      bool intersect = true;
+
+      stack<pair<node_adt *, size_t> > searchQ;
+      searchQ.push(make_pair(root, 0));
+
+      while (searchQ.empty() == false) {
+        current = searchQ.top().first;
+        currHeirarchy = searchQ.top().second;
+        searchQ.pop();
+
+        while (current != nullptr) {
+          // if (current->elementIndex == );
+          /* check intersection of current node*/
+          intersect = true;
+          for (unsigned short iDim = 0; iDim < SU2_BBOX_SIZE/2; iDim++) {
+            // intersect = intersect && (testBBox[iDim] < current->bBoxCoordinates[iDim+SU2_BBOX_SIZE/2] || floatEqual(testBBox[iDim], current->bBoxCoordinates[iDim+SU2_BBOX_SIZE/2]));
+            // intersect = intersect && (testBBox[iDim+SU2_BBOX_SIZE/2] > current->bBoxCoordinates[iDim] || floatEqual(testBBox[iDim+SU2_BBOX_SIZE/2], current->bBoxCoordinates[iDim]));
+            intersect = intersect && (testBBox[iDim] <= current->bBoxCoordinates[iDim+SU2_BBOX_SIZE/2]);
+            intersect = intersect && (testBBox[iDim+SU2_BBOX_SIZE/2] >= current->bBoxCoordinates[iDim]);
+          }
+          // intersect = intersect && testBBox[0] <= current->bBoxCoordinates[0+SU2_BBOX_SIZE/2];
+          // intersect = intersect && testBBox[1] <= current->bBoxCoordinates[1+SU2_BBOX_SIZE/2];
+          // intersect = intersect && testBBox[2] >= current->bBoxCoordinates[2-SU2_BBOX_SIZE/2];
+          // intersect = intersect && testBBox[3] >= current->bBoxCoordinates[3-SU2_BBOX_SIZE/2];
+          if (intersect) {
+            intersectingBBox.push_back(current->elementIndex);
+            // cout << "intersection found with element: " << current->elementIndex << endl;
+          }
+          i = currHeirarchy % 4;
+
+          /*branching based on minimum coordinate*/
+          if (i < SU2_BBOX_SIZE/2) {
+            /*curr->left is always searched as the left has min coords lower than current which gives no info on intersection */
+            searchQ.push(make_pair(current->left, currHeirarchy+1)); 
+            // if (floatEqual(testBBox[i+SU2_BBOX_SIZE/2], current->bBoxCoordinates[i])) {
+            //   current = current->right;
+            // }
+            /*Test _max < Current _min*/
+            if (testBBox[i+SU2_BBOX_SIZE/2] < current->bBoxCoordinates[i]) {
+              current = nullptr;
+            }
+            else {
+              current = current->right;
+            }
+            // searchQ.push(make_pair(current->right, currHeirarchy)); 
+          }
+          /*branching based on maximum coordinate*/
+          else{
+            /*curr->right is always searched as the right has max coords higher than current which gives no info on intersection */
+            searchQ.push(make_pair(current->right, currHeirarchy+1)); 
+            // if (floatEqual(testBBox[i-SU2_BBOX_SIZE/2], current->bBoxCoordinates[i])) {
+            //   current = current->left;
+            // }
+            /*Test _min > Current _max*/
+            if (testBBox[i-SU2_BBOX_SIZE/2] > current->bBoxCoordinates[i] ) {
+              current = nullptr;
+            }
+            else {
+              current = current->left;
+            }
+            // searchQ.push(make_pair(current->left, currHeirarchy)); 
+          }
+          // current = nullptr;
+          currHeirarchy = currHeirarchy + 1;
+        }
+      }
+      if (intersectingBBox.size() == 0) {
+        // cout << "No intersecting element BBox found." << endl;
+      }
+      return intersectingBBox;
+    }
+
     /* Level order output ADT */ 
-    void printLevelOrder() {
+    void printLevelOrder() const {
       if (root == nullptr) {
         cerr << "Empty ADT" << endl;
         return;
@@ -150,19 +252,80 @@ class ADT{
       q.push(root);
 
       while (q.empty() == false) {
-          node_adt * node = q.front();
+        // node_adt * node = q.front();
+        // cout << node->elementIndex << " ";
+        // q.pop();
+        // if (node->left != nullptr)
+        //     q.push(node->left);
+        // if (node->right != nullptr)
+        //     q.push(node->right);
+        int count = q.size();
+        while (count > 0){
+          node_adt *node = q.front();
           cout << node->elementIndex << " ";
           q.pop();
-          if (node->left != nullptr)
+          if (node->left != NULL)
               q.push(node->left);
-          if (node->right != nullptr)
+          if (node->right != NULL)
               q.push(node->right);
+          count--;
+        }
+        cout << endl;
       }
     }
+
+    // Function to generate DOT syntax for the BST (helper function)
+    std::string generateDot(node_adt* node) const {
+      if (node == nullptr) {
+        return "";
+      }
+      std::string dot;
+      std::string nodeName = std::to_string(node->elementIndex);
+      dot += "\"" + nodeName + "\"";
+      dot += "[label=\"" + nodeName + "\"]\n";
+
+      if (node->left != nullptr) {
+        dot += "\"" + nodeName + "\"" + " -> \"" + std::to_string(node->left->elementIndex) + "\"";
+        dot += "[color=red]\n";
+        dot += generateDot(node->left);
+      }
+      else if (node->right != nullptr){
+        dot += "\"" + nodeName + "_NULL\" ";
+        dot += "[shape=point]\n";
+        dot += "\"" + nodeName + "\"" + " -> \"" + nodeName + "_NULL\"";
+        dot += "[color=red]\n";
+      }
+      if (node->right != nullptr) {
+        dot += "\"" + nodeName + "\"" + " -> \"" + std::to_string(node->right->elementIndex) + "\"";
+        dot += "[color=blue]\n";
+        dot += generateDot(node->right);
+      }
+      else if (node->left != nullptr){
+        dot += "\"" + nodeName + "_NULL\" ";
+        dot += "[shape=point]\n";
+        dot += "\"" + nodeName + "\"" + " -> \"" + nodeName + "_NULL\"";
+        dot += "[color=blue]\n";
+      }
+      return dot;
+    }
+
+    // Generate DOT syntax and write to a file
+    void writeDotToFile(const std::string& filename) const {
+      std::ofstream file(filename);
+      if (!file.is_open()) {
+        std::cerr << "Error opening file: " << filename << std::endl;
+        return;
+      }
+      file << "digraph BST {" << std::endl;
+      file << generateDot(root);
+      file << "}" << std::endl;
+      file.close();
+    }    
 };
 
 class SU2Mesh {
-  protected:
+  // protected:
+  public:
     size_t dimension = 0;
 
     size_t numberOfLocalPoints = 0;
@@ -178,7 +341,12 @@ class SU2Mesh {
     /* layout is [[elementIndex, VTK type, xmin, ymin, zmin, xmax, ymax, zmax]]*/
     vector<su2double> localVolumeElementBoundingBox;
     ADT adtBoundingBox;
-  public:
+
+    vector<vector<size_t> > neighborPointsOfPoint;
+    /* defines the type of point: unused = 0, calculated = 1, interpolation donor = 2, interpolation reciever = 3 */
+    vector<unsigned short> localPointType;
+
+  // public:
     SU2Mesh(const string& filename) {
       bool foundNDIME = false, foundNPOIN = false;
       bool foundNELEM = false, foundNMARK = false;
@@ -210,8 +378,8 @@ class SU2Mesh {
               localPointCoordinates.resize(dimension);
               for (unsigned short k = 0; k < dimension; k++) localPointCoordinates[k].reserve(numberOfLocalPoints);
               
-              double Coords[3] = {0.0, 0.0, 0.0};
-              for (auto iPoint = 0ul; iPoint < numberOfLocalPoints; iPoint++) {
+              array<su2double, 3> Coords {0.0, 0.0, 0.0};
+              for (size_t iPoint = 0; iPoint < numberOfLocalPoints; iPoint++) {
                 getline(mesh_file, text_line);
                 istringstream point_line(text_line);
                 /* Store the coordinates more clearly. */
@@ -299,7 +467,7 @@ class SU2Mesh {
                     bound_line >> connectivity[i];
                   }
 
-                  surfaceElementConnectivity[iMarker].push_back(0);
+                  surfaceElementConnectivity[iMarker].push_back(0); /* magic number 0 ??*/
                   surfaceElementConnectivity[iMarker].push_back(VTK_Type);
                   for (unsigned short i = 0; i < N_POINTS_HEXAHEDRON; i++) {
                     surfaceElementConnectivity[iMarker].push_back(connectivity[i]);
@@ -313,16 +481,44 @@ class SU2Mesh {
           }
         mesh_file.close();
         }
-        // cout << "NDIM = " << dimension << endl;
-        // cout << "NPOIN = " << localPointCoordinates[0].size() << endl;
-        // cout << "NELEM = " << localVolumeElementConnectivity.size() << endl;
-        // cout << "NMARK = " << markerNames.size() << endl;
       }
       else { 
-        cerr << "Unable to open file!" << endl; 
+        cerr << "Unable to open file -> "<< filename << endl; 
       } 
 
+      /*create vector of neighbors of each point */
+      neighborPointsOfPoint.resize(numberOfLocalPoints);
+      for (size_t iElement = 0; iElement < numberOfLocalElements; ++iElement) {
+        unsigned short VTK_Type = localVolumeElementConnectivity[iElement*SU2_CONN_SIZE+1];
+        const auto nPointsElem = nPointsOfElementType(VTK_Type);
+        size_t pointA, pointB;
+        for (unsigned short iPoint = 0; iPoint < nPointsElem-1; ++iPoint) {
+          pointA = localVolumeElementConnectivity[iElement*SU2_CONN_SIZE+2+ iPoint];
+          pointB = localVolumeElementConnectivity[iElement*SU2_CONN_SIZE+2+ (iPoint+1)];
+          neighborPointsOfPoint[pointA].push_back(pointB);
+          neighborPointsOfPoint[pointB].push_back(pointA);
+        }
+        pointA = localVolumeElementConnectivity[iElement*SU2_CONN_SIZE+2+ 0];
+        pointB = localVolumeElementConnectivity[iElement*SU2_CONN_SIZE+2+ nPointsElem-1];
+        neighborPointsOfPoint[pointA].push_back(pointB);
+        neighborPointsOfPoint[pointB].push_back(pointA);
+      }
+
+      /* remove duplicates from the neighboring point lists*/
+      vector<size_t>::iterator vecIt;
+      for (size_t iPoint = 0; iPoint < numberOfLocalPoints; iPoint++) {
+        /* sort neighboring points for each point */
+        sort(neighborPointsOfPoint[iPoint].begin(), neighborPointsOfPoint[iPoint].end());
+
+        /* uniquify list of neighboring points */
+        vecIt = unique(neighborPointsOfPoint[iPoint].begin(), neighborPointsOfPoint[iPoint].end());
+
+        /* adjust size of vector */
+        neighborPointsOfPoint[iPoint].resize(vecIt - neighborPointsOfPoint[iPoint].begin());
+      }
+
       SU2Mesh::GenerateElementBoundingBox();
+      SU2Mesh::GenerateADT();
     };
     virtual ~SU2Mesh() = default;
     
@@ -333,6 +529,16 @@ class SU2Mesh {
     
     inline size_t GetNumberOfLocalElements() const { return numberOfLocalElements; }
     inline const vector<size_t>& GetLocalVolumeElementConnectivity() const {return localVolumeElementConnectivity;}
+
+    vector<size_t> GetPointsOfElement(size_t iElement) {
+      vector<size_t> elementPoints;
+      unsigned short VTK_Type = localVolumeElementConnectivity[iElement * SU2_CONN_SIZE + 1];
+      const auto nPointsElem = nPointsOfElementType(VTK_Type);
+      for (unsigned short i = 0; i < nPointsElem; i++) {
+        elementPoints.push_back(localVolumeElementConnectivity[iElement * SU2_CONN_SIZE + 2 + i]);
+      }
+      return elementPoints;
+    }
     
     inline size_t GetNumberOfMarkers() const { return numberOfMarkers; }
     inline const vector<string>& GetMarkerNames() const { return markerNames; }
@@ -367,7 +573,7 @@ class SU2Mesh {
         for (unsigned short iDim = 0; iDim < dimension; iDim++) {
           for (unsigned short i = 0; i < nPointsElem; i++) {
             bboxCoordinates[iDim] = min(bboxCoordinates[iDim], localPointCoordinates[iDim][connectivity[i]]);
-            bboxCoordinates[iDim+2] = max(bboxCoordinates[iDim+2], localPointCoordinates[iDim][connectivity[i]]); /* +2 for 2D */
+            bboxCoordinates[iDim+SU2_BBOX_SIZE/2] = max(bboxCoordinates[iDim+SU2_BBOX_SIZE/2], localPointCoordinates[iDim][connectivity[i]]); /* +2 for 2D */
           }
         }
 
@@ -397,41 +603,156 @@ class SU2Mesh {
         for (unsigned short i = 0; i < SU2_BBOX_SIZE; ++i) {
           bboxCoords[i] = localVolumeElementBoundingBox[LocalIndex*SU2_BBOX_SIZE + i];
         }
-        node_adt * temp = new node_adt(LocalIndex, bboxCoords);
-        adtBoundingBox.insertNode(temp);
+        node_adt * tempNode = new node_adt(LocalIndex, bboxCoords);
+        adtBoundingBox.insertNode(tempNode);
       }
       cout << "Max heirarchy : " << adtBoundingBox.treeHeirarchy << endl;
+    }
+
+    array<su2double, SU2_BBOX_SIZE> GetPointBBox (const size_t pointNumber) const {
+      /* small value to generate a bounding box centered around a point */
+      su2double epsilon = std::numeric_limits<su2double>::epsilon();
+      array<su2double, 3> Coords {0.0, 0.0, 0.0};
+      array<su2double, SU2_BBOX_SIZE> pointBBoxCoords{};
+      for (unsigned short iDim = 0; iDim < dimension; ++iDim) {
+          Coords[iDim] = localPointCoordinates[iDim][pointNumber];
+          pointBBoxCoords[iDim] = Coords[iDim] - epsilon; 
+          pointBBoxCoords[iDim+2] = Coords[iDim] + epsilon; 
+        }
+      return pointBBoxCoords;
+    }
+    
+    void MarkInterpolationDonor(const vector<SU2Mesh> &overest_mesh) {
+      /* input is vector of overlapping mesh*/
+      
+      /*by default all points are calculated type i.e = 1*/
+      localPointType.resize(numberOfLocalPoints, 1);
+
+      /* mark interpolation donors required by other subgrids*/
+      for (const auto& iMesh : overest_mesh) {
+        const auto meshNumberOfMarkers = iMesh.GetNumberOfMarkers();
+        
+        /*iterate over all markers of overset meshes to mark interpolation donor*/
+        for (unsigned short iMarker = 0; iMarker < meshNumberOfMarkers; iMarker++){
+          // cout << "iMarker = " << iMarker << endl;
+          const auto& iMeshSurfaceElementConnectivity = iMesh.GetSurfaceElementConnectivityForMarker(iMarker);
+          set<size_t> meshSurfacePoints;
+          const auto nElem_Bound = iMesh.GetNumberOfSurfaceElementsForMarker(iMarker);
+          
+          /*iterate over elements in iMarker and store as points[in a set to avoid duplicates]*/  
+          for (size_t iElem_Bound = 0; iElem_Bound < nElem_Bound*SU2_CONN_SIZE; iElem_Bound+=SU2_CONN_SIZE){
+            unsigned short VTK_Type = iMeshSurfaceElementConnectivity[iElem_Bound+1]; 
+            const auto nPointsElem = nPointsOfElementType(VTK_Type);
+            for (unsigned short i = 0; i < nPointsElem; ++i) {
+              meshSurfacePoints.insert(iMeshSurfaceElementConnectivity[iElem_Bound+2+i]);
+            }
+          }
+          
+          auto numberSurfacePoints = meshSurfacePoints.size();
+         
+         /*iterate over points in surface of iMarker of iMesh */
+          for (const auto iPoint : meshSurfacePoints){
+            auto pointBBox = iMesh.GetPointBBox(iPoint);
+            const auto BBox = adtBoundingBox.searchADT(pointBBox);
+            if (BBox.size() == 0) {
+              cerr << "No interpolation stencil found. What to do ??" << endl;
+            }
+            else {
+              if (BBox.size() != 1) {
+              cerr << "Multiple interpolation stencil found. What to do ??" << endl;
+              }
+              for (auto iPoint : GetPointsOfElement(BBox[0])) {
+                // cout << "Marking iPoint = " << iPoint << " as donor " << endl;
+                localPointType[iPoint] = 2;
+                /* mark all neighbors as required (for complete stencil of donor)*/
+                for (auto neighborPoint : neighborPointsOfPoint[iPoint]) {
+                  if (localPointType[neighborPoint] == 2) {continue;}
+                  localPointType[neighborPoint] = 4; /*donor buffer*/
+                }
+              }
+            }
+          }
+        }
+
+        /*check removability of each point -> if neighbours can be interpolation cells and cell is bigger than overlapping cell*/
+        for (size_t iPoint = 0; iPoint < numberOfLocalPoints; iPoint++) {
+          /* skip interpolation donors and it's buffer */
+          if (localPointType[iPoint] == 2 || localPointType[iPoint] == 4) {
+            continue;
+          }
+
+          /* TODO: check if donors/overlapping cells are finer/smaller than iPoint. Assumed for now.*/
+          bool neighborsCanBeInterpolated = true;
+          for (auto neighborPoint : neighborPointsOfPoint[iPoint]) {
+            if (localPointType[neighborPoint] == 2 || localPointType[neighborPoint] == 4) {neighborsCanBeInterpolated = false; continue;}
+            auto pointBBox = GetPointBBox(neighborPoint);
+            const auto BBox = iMesh.adtBoundingBox.searchADT(pointBBox);
+            if (BBox.size() == 0) {
+              neighborsCanBeInterpolated = false;
+            }
+          }
+          if (neighborsCanBeInterpolated) {
+            localPointType[iPoint] = 0; // iPoint becomes unused
+            for (auto neighborPoint : neighborPointsOfPoint[iPoint]) {
+              if (localPointType[neighborPoint] != 1) {continue;}
+              localPointType[neighborPoint] = 3; // neighbors are marked as interpolated
+            }
+          }
+
+        }
+      }
+    }
+
+    void WriteTxtPointType(string filename = "pointType.txt") const{
+      ofstream pointType(filename);
+      if (!pointType.is_open()) {
+        std::cerr << "Error opening file: " << filename << std::endl;
+        return;
+      }
+      for (size_t iPoint = 0; iPoint < numberOfLocalPoints; iPoint++) {
+        pointType << localPointType[iPoint] << " ";
+        // if (iPoint % 100 == 0 && iPoint != 0) {pointType << endl;}
+      }
+      pointType.close();
     }
 };
  
 int main() {
-  SU2Mesh bg_mesh("/Users/zlatangg/Documents/Overset/overset_mesh/SU2/mesh su2/square_20x20.su2");
-  SU2Mesh comp_mesh("/Users/zlatangg/Documents/Overset/overset_mesh/SU2/mesh su2/square_4x4.su2");
+  SU2Mesh bg_mesh("/Users/zlatangg/Documents/Overset/overset_mesh/SU2/mesh su2/rect-0000-100x100.su2");
+  SU2Mesh comp_mesh("/Users/zlatangg/Documents/Overset/overset_mesh/SU2/mesh su2/rect-0505-30x30.su2");
   cout.width(std::numeric_limits<double>::digits10+2);
   cout.precision(std::numeric_limits<double>::digits10+2);
-  bg_mesh.PrintMeshDetails();
-  auto bg_eleConn = bg_mesh.GetLocalVolumeElementConnectivity();
-  auto bg_bBox = bg_mesh.GetLocalVolumeElementBoundingBox();
-  bg_mesh.GenerateADT();
-  comp_mesh.GenerateADT();
+  // bg_mesh.PrintMeshDetails();
+  // comp_mesh.PrintMeshDetails();
 
-  auto check_num_ele = 4;
-  cout << "Element Connectivity -> " << endl;
-  for(unsigned short i = 0; i < check_num_ele; ++i){
-    cout << "Element " << i << " : ";
-    for(unsigned short j = 0; j < SU2_CONN_SIZE; ++j) {
-      cout << bg_eleConn[i*SU2_CONN_SIZE + j] << '\t';
-    }
-    cout << endl;
-  }
-  cout << endl << "Bounding Box -> " << endl;
-  for(unsigned short i = 0; i < check_num_ele; ++i){
-    cout << "Element " << i << " : ";
-    for(unsigned short j = 0; j < SU2_BBOX_SIZE; ++j) {
-      cout << bg_bBox[i*SU2_BBOX_SIZE + j] << '\t';
-    }
-    cout << endl;
-  }
+  // bg_mesh.TraverseADT();
+  
+  bg_mesh.MarkInterpolationDonor(vector<SU2Mesh> {comp_mesh});
+
+  // auto pointBBox = comp_mesh.GetPointBBox(2);
+  // // array<su2double, 4> pointBBox = {0.5-std::numeric_limits<su2double>::epsilon(), 0.5-std::numeric_limits<su2double>::epsilon(), 0.5+std::numeric_limits<su2double>::epsilon(), 0.5+std::numeric_limits<su2double>::epsilon()};
+  // auto BBox = bg_mesh.adtBoundingBox.searchADT(pointBBox);
+  // cout << "Number of Intersecting BBox found  = " << BBox.size()<<  endl;
+  // if (BBox.size() != 0) {
+  //   for (auto box : BBox){
+  //     cout << box << " ";
+  //   }
+  //   cout << endl;
+  // }
+  
+  cout << " ----------- " << endl;
+
+  bg_mesh.adtBoundingBox.writeDotToFile("bgADT.txt");
+  comp_mesh.adtBoundingBox.writeDotToFile("compADT.txt");
+  
+  bg_mesh.WriteTxtPointType("bgPtType.txt");
+  // comp_mesh.WriteTxtPointType("compPtTypep.txt");
+  // comp_mesh.TraverseADT();
+  // cout << bg_mesh.adtBoundingBox.root->right->right->right->left->right->elementIndex << endl;
+  // auto interpolationStencils = bg_mesh.adtBoundingBox.searchADT(pointBBox);
+
+  // cout << bg_mesh.adtBoundingBox.root->bBoxCoordinates << endl;
+  // cout << comp_mesh.adtBoundingBox.root->elementIndex << endl;
 
   return 0;
 }
