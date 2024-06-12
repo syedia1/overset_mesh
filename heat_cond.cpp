@@ -3,7 +3,17 @@
 #include <fstream>
 #include <cmath>
 #include <iomanip>
+#include <array>
+#include <stack>
+#include <queue>
+#include <random>
+#include <algorithm>
 using namespace std;
+
+using su2double = double;
+const size_t SU2_BBOX_SIZE   = 4;  /*!< \brief Size of the bounding box array that is allocated for each element*/
+constexpr su2double su2double_lowest = std::numeric_limits<su2double>::lowest();
+constexpr su2double su2double_highest = std::numeric_limits<su2double>::max();
 
 typedef vector<vector<pair<vector<size_t>, vector<double> > > > vec3id;
 typedef vector<vector<double> > vec2d;
@@ -16,7 +26,16 @@ const double PI = 3.141592653589793238463;
 const double TOLERANCE = 1024 * std::numeric_limits<double>::epsilon();
 // const double TOLERANCE = 1e-6;
 const size_t NS_MAXITER = 20;
+const size_t BBOXSIZE = 4;
 
+enum POINT_TYPE {
+  UNUNSED = 0,
+  CALCULATED = 1,          
+  INTERPOLATION_DONOR = 2,
+  INTERPOLATION_RECIEVER = 3,
+  DONOR_BUFFER = 4,
+  BC_SPECIFIED = 5,
+};
 
 // function declarations
 void BC(vec2d &T, const vec1d T_b);
@@ -31,6 +50,622 @@ vec2d matMul(const vec2d &A, const vec2d &B);
 vec1d matAdd(const vec1d &A, const vec1d &B);
 vec1d solveAxB(const vec2d &A, const vec1d &B);
 
+class node_adt {
+  public:
+    size_t elementIndex;
+    array<su2double, SU2_BBOX_SIZE> bBoxCoordinates; 
+    node_adt * left;
+    node_adt * right;
+    
+    node_adt(const size_t elementIdx, const array<su2double, SU2_BBOX_SIZE> &bBoxCoords) : elementIndex(elementIdx), bBoxCoordinates(bBoxCoords), left(nullptr), right(nullptr) {}
+    virtual ~node_adt() = default;
+};
+
+class ADT{
+  public:
+    node_adt * root;
+    size_t treeHeirarchy;
+    ADT() : root(nullptr), treeHeirarchy(0) {}
+    virtual ~ADT() = default;
+  
+    void insertNode(node_adt * node) {
+      node_adt * current = root;
+      node_adt * parent = nullptr;
+      size_t elementHeirarchy = 0, i = 0;
+
+      /* Traverse the tree to find the insertion point */
+      while (current != nullptr) {
+        parent = current;
+        /* Heirarchy cycling -> (x_min, y_min, z_min, x_max, y_max, z_max)*/
+        i = elementHeirarchy % 4; /* For 2d cycle with 4 values*/
+        /* node with equal values are put on left branch*/
+        // if (floatEqual(current->bBoxCoordinates[i], node->bBoxCoordinates[i])) {
+        //   current = current->left;
+        // } else 
+        if (current->bBoxCoordinates[i] < node->bBoxCoordinates[i]) {
+          current = current->right;
+        } else {
+          current = current->left;
+        }
+        elementHeirarchy = elementHeirarchy + 1;
+      }
+      if (parent == nullptr) {
+        root = node;
+      // } else if (floatEqual(parent->bBoxCoordinates[i], node->bBoxCoordinates[i])) {
+      //   parent->left = node;
+      // } else 
+      } else if (parent->bBoxCoordinates[i] < node->bBoxCoordinates[i]) {
+        parent->right = node;
+      } else {
+        parent->left = node;
+      }
+
+      current = node;
+      treeHeirarchy = max(treeHeirarchy, elementHeirarchy);
+      // cout << "Element added " << current->elementIndex << " at h = " << heirarchy << endl;
+    }
+    
+    vector<size_t> searchADT(array<su2double, SU2_BBOX_SIZE> &testBBox) const {
+      /*return a vector of indices of elements which intersect with the test bounding box*/
+      size_t currHeirarchy = 0, i = 0;
+      vector<size_t> intersectingBBox;
+      node_adt * current = nullptr;
+      bool intersect = true;
+
+      stack<pair<node_adt *, size_t> > searchQ;
+      searchQ.push(make_pair(root, 0));
+
+      while (searchQ.empty() == false) {
+        current = searchQ.top().first;
+        currHeirarchy = searchQ.top().second;
+        searchQ.pop();
+
+        while (current != nullptr) {
+          // if (current->elementIndex == );
+          /* check intersection of current node*/
+          intersect = true;
+          for (unsigned short iDim = 0; iDim < SU2_BBOX_SIZE/2; iDim++) {
+            // intersect = intersect && (testBBox[iDim] < current->bBoxCoordinates[iDim+SU2_BBOX_SIZE/2] || floatEqual(testBBox[iDim], current->bBoxCoordinates[iDim+SU2_BBOX_SIZE/2]));
+            // intersect = intersect && (testBBox[iDim+SU2_BBOX_SIZE/2] > current->bBoxCoordinates[iDim] || floatEqual(testBBox[iDim+SU2_BBOX_SIZE/2], current->bBoxCoordinates[iDim]));
+            intersect = intersect && (testBBox[iDim] <= current->bBoxCoordinates[iDim+SU2_BBOX_SIZE/2]);
+            intersect = intersect && (testBBox[iDim+SU2_BBOX_SIZE/2] >= current->bBoxCoordinates[iDim]);
+          }
+          // intersect = intersect && testBBox[0] <= current->bBoxCoordinates[0+SU2_BBOX_SIZE/2];
+          // intersect = intersect && testBBox[1] <= current->bBoxCoordinates[1+SU2_BBOX_SIZE/2];
+          // intersect = intersect && testBBox[2] >= current->bBoxCoordinates[2-SU2_BBOX_SIZE/2];
+          // intersect = intersect && testBBox[3] >= current->bBoxCoordinates[3-SU2_BBOX_SIZE/2];
+          if (intersect) {
+            intersectingBBox.push_back(current->elementIndex);
+            // cout << "intersection found with element: " << current->elementIndex << endl;
+          }
+          i = currHeirarchy % 4;
+
+          /*branching based on minimum coordinate*/
+          if (i < SU2_BBOX_SIZE/2) {
+            /*curr->left is always searched as the left has min coords lower than current which gives no info on intersection */
+            searchQ.push(make_pair(current->left, currHeirarchy+1)); 
+            // if (floatEqual(testBBox[i+SU2_BBOX_SIZE/2], current->bBoxCoordinates[i])) {
+            //   current = current->right;
+            // }
+            /*Test _max < Current _min*/
+            if (testBBox[i+SU2_BBOX_SIZE/2] < current->bBoxCoordinates[i]) {
+              current = nullptr;
+            }
+            else {
+              current = current->right;
+            }
+            // searchQ.push(make_pair(current->right, currHeirarchy)); 
+          }
+          /*branching based on maximum coordinate*/
+          else{
+            /*curr->right is always searched as the right has max coords higher than current which gives no info on intersection */
+            searchQ.push(make_pair(current->right, currHeirarchy+1)); 
+            // if (floatEqual(testBBox[i-SU2_BBOX_SIZE/2], current->bBoxCoordinates[i])) {
+            //   current = current->left;
+            // }
+            /*Test _min > Current _max*/
+            if (testBBox[i-SU2_BBOX_SIZE/2] > current->bBoxCoordinates[i] ) {
+              current = nullptr;
+            }
+            else {
+              current = current->left;
+            }
+            // searchQ.push(make_pair(current->left, currHeirarchy)); 
+          }
+          // current = nullptr;
+          currHeirarchy = currHeirarchy + 1;
+        }
+      }
+      if (intersectingBBox.size() == 0) {
+        // cout << "No intersecting element BBox found." << endl;
+      }
+      return intersectingBBox;
+    }
+
+    /* Level order output ADT */ 
+    void printLevelOrder() const {
+      if (root == nullptr) {
+        cerr << "Empty ADT" << endl;
+        return;
+      }
+      queue< node_adt * > q;
+      q.push(root);
+
+      while (q.empty() == false) {
+        // node_adt * node = q.front();
+        // cout << node->elementIndex << " ";
+        // q.pop();
+        // if (node->left != nullptr)
+        //     q.push(node->left);
+        // if (node->right != nullptr)
+        //     q.push(node->right);
+        int count = q.size();
+        while (count > 0){
+          node_adt *node = q.front();
+          cout << node->elementIndex << " ";
+          q.pop();
+          if (node->left != NULL)
+              q.push(node->left);
+          if (node->right != NULL)
+              q.push(node->right);
+          count--;
+        }
+        cout << endl;
+      }
+    }
+
+    // Function to generate DOT syntax for the BST (helper function)
+    std::string generateDot(node_adt* node) const {
+      if (node == nullptr) {
+        return "";
+      }
+      std::string dot;
+      std::string nodeName = std::to_string(node->elementIndex);
+      dot += "\"" + nodeName + "\"";
+      dot += "[label=\"" + nodeName + "\"]\n";
+
+      if (node->left != nullptr) {
+        dot += "\"" + nodeName + "\"" + " -> \"" + std::to_string(node->left->elementIndex) + "\"";
+        dot += "[color=red]\n";
+        dot += generateDot(node->left);
+      }
+      else if (node->right != nullptr){
+        dot += "\"" + nodeName + "_NULL\" ";
+        dot += "[shape=point]\n";
+        dot += "\"" + nodeName + "\"" + " -> \"" + nodeName + "_NULL\"";
+        dot += "[color=red]\n";
+      }
+      if (node->right != nullptr) {
+        dot += "\"" + nodeName + "\"" + " -> \"" + std::to_string(node->right->elementIndex) + "\"";
+        dot += "[color=blue]\n";
+        dot += generateDot(node->right);
+      }
+      else if (node->left != nullptr){
+        dot += "\"" + nodeName + "_NULL\" ";
+        dot += "[shape=point]\n";
+        dot += "\"" + nodeName + "\"" + " -> \"" + nodeName + "_NULL\"";
+        dot += "[color=blue]\n";
+      }
+      return dot;
+    }
+
+    // Generate DOT syntax and write to a file
+    void writeDotToFile(const std::string& filename) const {
+      std::ofstream file(filename);
+      if (!file.is_open()) {
+        std::cerr << "Error opening file: " << filename << std::endl;
+        return;
+      }
+      file << "digraph BST {" << std::endl;
+      file << generateDot(root);
+      file << "}" << std::endl;
+      file.close();
+    }    
+};
+
+class StructuredMesh{
+  /* 
+  j, i based indexing of mesh so point coordinates are not required
+  Points are numberered row wise aligned with local x coordinate i.e. 0, 1 ... Nx-1 is the bottom-most row followed by Nx, Nx+1 ... 2*Nx-1
+  Elements are also numbered in this way i.e. teh bottom-most row is  0, 1, ... Nx-2
+  */
+  public:
+    /*defines length (x), width(y), anti-clockwise rotation, origin*/
+    double L, W, theta, xO, yO;
+    double dx, dy;
+    /* number of divisions in x and y directions*/
+    size_t Nx, Ny, numberOfElements, numberOfPoints,dimension;
+    
+    /* defines the type of point: unused = 0, calculated = 1, interpolation donor = 2, interpolation reciever = 3 */
+    vector<unsigned short> pointType;
+
+    /* stores the donor interpolation stencil (point numbers are stored) from the other overset mesh for all the elements if it exists*/
+    vector<vector<size_t> > interpolationStencil;
+    /* stores the interpolation coefficients corresponding to the donor points in interpolationStencil */
+    vector<vector<double> > interpolationCoeffs;
+
+    vector<vector<double> > pointCoordinates;
+    vector<vector<size_t> > neighborPointsOfPoint;
+    vector<vector<size_t> > elementConnectivity;
+    vector<vector<double> > elementBBox;
+
+    /* bottom, right, top, left*/
+    vector<vector<size_t> > boundaryPoints;
+    /* bottom, right, top, left*/
+    vector<double> boundaryCondition;
+  
+    ADT adtBoundingBox;
+
+    /* variables at nodes */
+    vector<double> T;
+    vector<double> Tn1;
+
+    StructuredMesh(double xOrigin, double yOrigin, double axisTheta, double length, double width, size_t _Nx, size_t _Ny) {
+      dimension = 2;
+      L = length, W = width, xO = xOrigin, yO = yOrigin, theta = axisTheta;
+      Nx = _Nx, Ny = _Ny;
+      numberOfPoints = Nx * Ny;
+      numberOfElements = (Nx-1) * (Ny-1);
+      dx = L / Nx;
+      dy = W / Ny;
+
+      /* Point coordinates */
+      pointCoordinates.resize(dimension);
+      for (unsigned short iDim = 0; iDim < dimension; ++iDim) {
+        pointCoordinates[iDim].resize(numberOfPoints);
+      }
+      pointType.resize(numberOfPoints, CALCULATED);
+      size_t iPoint = numberOfPoints;
+      for (size_t j = 0; j < Ny; ++j) {
+        for (size_t i = 0; i < Nx; i++) {
+          iPoint = GetPointNumber(i, j);
+          // pointCoordinates[0][iPoint] = i * dx; /* local x axis*/
+          // pointCoordinates[1][iPoint] = j * dy; /* local y axis*/
+          pointCoordinates[0][iPoint] = xO + (i*dx) * cos(theta) - (j*dy)* sin(theta); /* global x axis*/
+          pointCoordinates[1][iPoint] = yO + (i*dx) * sin(theta) + (j*dy)* cos(theta); /* global y axis*/
+        }
+      }
+
+      /* Element connectivity and it's bounding box */
+      elementConnectivity.resize(numberOfElements);
+      elementBBox.resize(numberOfElements);
+      size_t iElement = numberOfElements;
+      for(size_t j = 0; j < Ny-1; ++j) {
+        for(size_t i = 0; i < Nx-1; ++i) {
+          iElement = GetElementNumber(i, j);
+          // elementConnectivity[iElement].assign({iElement, iElement+1, iElement+1+Nx, iElement+Nx});
+          elementConnectivity[iElement].assign({j*Nx + i, j*Nx + i+1, (j+1)*Nx + i+1, (j+1)*Nx + i});
+          
+          /* Element cartesian aligned Bounding Box */
+          // elementBBox[iElement].assign({i*dx, j*dy, (i+1)*dx, (j+1)*dy}); /* {Xmin, Ymin, Xmax, Ymax}*/
+          elementBBox[iElement].assign({su2double_highest, su2double_highest, su2double_lowest, su2double_lowest}); /* {Xmin, Ymin, Xmax, Ymax}*/
+          for (size_t iPoint = 0; iPoint < elementConnectivity[iElement].size(); ++iPoint){
+              double x = pointCoordinates[0][elementConnectivity[iElement][iPoint]];
+              double y = pointCoordinates[1][elementConnectivity[iElement][iPoint]];
+              elementBBox[iElement][0] = min(elementBBox[iElement][0], x);
+              elementBBox[iElement][1] = min(elementBBox[iElement][1], y);
+              elementBBox[iElement][2] = max(elementBBox[iElement][2], x);
+              elementBBox[iElement][3] = max(elementBBox[iElement][3], y);
+          }
+        }
+      }
+
+      /* Boundary Surfaces*/
+      boundaryPoints.resize(4); /* bottom, right, top, left*/
+      for(size_t iBoundPoint = 0; iBoundPoint < Nx; iBoundPoint++){
+        boundaryPoints[0].push_back(iBoundPoint); /*bottom*/
+        boundaryPoints[2].push_back((Ny-1)*Nx + iBoundPoint); /*top*/
+      }      
+      for(size_t iBoundPoint = 0; iBoundPoint < Ny; iBoundPoint++){
+        boundaryPoints[3].push_back(iBoundPoint*Nx); /*left*/
+        boundaryPoints[1].push_back(Nx*iBoundPoint + (Nx-1)); /*right*/
+      }
+      reverse(boundaryPoints[2].begin(), boundaryPoints[2].end());
+      reverse(boundaryPoints[3].begin(), boundaryPoints[3].end());
+
+      /* Neighbour points of point */
+      neighborPointsOfPoint.resize(numberOfPoints);
+      for (size_t j = 0; j < Ny-1; ++j) {
+        for (size_t i = 0; i < Nx-1; ++i) {
+          iElement = GetElementNumber(i, j);
+          size_t pointA, pointB;
+          for(size_t iPoint = 0; iPoint < elementConnectivity[iElement].size(); iPoint++) {
+            pointA = elementConnectivity[iElement][iPoint];
+            pointB = elementConnectivity[iElement][(iPoint+1)%4];
+            neighborPointsOfPoint[pointA].push_back(pointB);
+            neighborPointsOfPoint[pointB].push_back(pointA);
+          }
+        }
+      }
+      /* remove duplicates from the neighboring point lists*/
+      iPoint = numberOfPoints;
+      vector<size_t>::iterator vecIt;
+      for (size_t j = 0; j < Ny; ++j) {
+        for (size_t i = 0; i < Nx; ++i) {
+          iPoint = GetPointNumber(i, j);
+          /* sort neighboring points for each point */
+          sort(neighborPointsOfPoint[iPoint].begin(), neighborPointsOfPoint[iPoint].end());
+          
+          /* uniquify list of neighboring points */
+          vecIt = unique(neighborPointsOfPoint[iPoint].begin(), neighborPointsOfPoint[iPoint].end());
+
+          /* adjust size of vector */
+          neighborPointsOfPoint[iPoint].resize(vecIt - neighborPointsOfPoint[iPoint].begin());
+        }
+      }
+      
+      /*resize/initialize all vectors*/
+      T.resize(numberOfPoints, -1);
+      Tn1.resize(numberOfPoints, -1);
+
+      interpolationStencil.resize(numberOfPoints);
+      interpolationCoeffs.resize(numberOfPoints);
+      GenerateADT();
+    };
+    
+    inline size_t GetElementNumber (size_t i, size_t j) const {return j*(Nx-1) + i;}
+    inline size_t GetPointNumber (size_t i, size_t j) const {return j*Nx + i;}
+
+    virtual ~StructuredMesh() = default;
+
+    void GenerateADT() {
+      array<su2double, SU2_BBOX_SIZE> bboxCoords{};
+      
+      /* modifying node insertion to balance the tree */
+      vector<size_t> elementOrderADT;
+      elementOrderADT.resize(numberOfElements);
+      iota(elementOrderADT.begin(), elementOrderADT.end(), 0);
+      // shuffle(elementOrderADT.begin(), elementOrderADT.end(), std::mt19937{std::random_device{}()});
+      shuffle(elementOrderADT.begin(), elementOrderADT.end(), std::mt19937{12337});
+
+      for (size_t randomIndex = 0; randomIndex < numberOfElements; ++randomIndex) {
+        size_t LocalIndex = elementOrderADT[randomIndex];
+        for (unsigned short i = 0; i < SU2_BBOX_SIZE; ++i) {
+          bboxCoords[i] = elementBBox[LocalIndex][i];
+        }
+        node_adt * tempNode = new node_adt(LocalIndex, bboxCoords);
+        adtBoundingBox.insertNode(tempNode);
+      }
+      cout << "Max heirarchy : " << adtBoundingBox.treeHeirarchy << endl;
+    }
+
+    array<su2double, SU2_BBOX_SIZE> GetPointBBox (const size_t pointNumber) const {
+      /* small value to generate a bounding box centered around a point */
+      su2double epsilon = std::numeric_limits<su2double>::epsilon();
+      array<su2double, 3> Coords {0.0, 0.0, 0.0};
+      array<su2double, SU2_BBOX_SIZE> pointBBoxCoords{};
+      for (unsigned short iDim = 0; iDim < dimension; ++iDim) {
+          Coords[iDim] = pointCoordinates[iDim][pointNumber];
+          pointBBoxCoords[iDim] = Coords[iDim] - epsilon; 
+          pointBBoxCoords[iDim+2] = Coords[iDim] + epsilon; 
+        }
+      return pointBBoxCoords;
+    }
+
+    void MarkOversetBoundaryDonors(const StructuredMesh& oversetMesh) {
+      /* does a type of holecutting / removal of coarse cells where overlapping finer cells are present*/
+
+      /* iterate over all the boundaries of overset mesh to mark donors */
+      for (size_t iBound = 0; iBound < oversetMesh.boundaryPoints.size(); ++iBound) {
+        /* iterate over all points in iBound*/
+        for (size_t iBoundPoint = 0; iBoundPoint < oversetMesh.boundaryPoints[iBound].size(); ++iBoundPoint){
+          size_t point = oversetMesh.boundaryPoints[iBound][iBoundPoint];
+          auto pointBBox = oversetMesh.GetPointBBox(point);
+          const auto BBox = adtBoundingBox.searchADT(pointBBox);
+          if (BBox.size() == 0) {
+            cerr << "Point: "<< point << " No interpolation stencil found. What to do ??" << endl;
+          }
+          else {
+            if (BBox.size() != 1) {
+            cerr << "Point : "<< point << " Multiple interpolation stencil found [" << BBox.size() << "]. What to do ??" << endl;
+            }
+            for (auto iPoint : elementConnectivity[BBox[0]]) {
+              // cout << "Marking iPoint = " << iPoint << " as donor " << endl;
+              pointType[iPoint] = 2;
+              /* mark all neighbors as required (for complete stencil of donor)*/
+              for (auto neighborPoint : neighborPointsOfPoint[iPoint]) {
+                if (pointType[neighborPoint] == 2) {continue;}
+                pointType[neighborPoint] = 4; /*donor buffer*/
+              }
+            }
+          }
+        }
+      }
+
+      /*check removability of each point -> if neighbours can be interpolation cells and cell is bigger than overlapping cell*/
+      for (size_t iPoint = 0; iPoint < numberOfPoints; ++iPoint) {
+        /* skip interpolation donors and it's buffer */
+        if (pointType[iPoint] == INTERPOLATION_DONOR || pointType[iPoint] == DONOR_BUFFER) {
+          continue;
+        }
+        
+        /* TODO: check if donors/overlapping cells are finer/smaller than iPoint. Assumed for now.*/
+        bool neighborsCanBeInterpolated = true;
+        for (auto neighborPoint : neighborPointsOfPoint[iPoint]) {
+          if (pointType[neighborPoint] == INTERPOLATION_DONOR || pointType[neighborPoint] == DONOR_BUFFER) {neighborsCanBeInterpolated = false; break;}
+          auto pointBBox = GetPointBBox(neighborPoint);
+          const auto BBox = oversetMesh.adtBoundingBox.searchADT(pointBBox);
+          if (BBox.size() == 0) {
+            neighborsCanBeInterpolated = false;
+          } 
+        }
+        if (neighborsCanBeInterpolated) {
+          pointType[iPoint] = UNUNSED; // iPoint becomes unused
+          for (auto neighborPoint : neighborPointsOfPoint[iPoint]) {
+            if (pointType[neighborPoint] != CALCULATED) {continue;}
+            pointType[neighborPoint] = INTERPOLATION_RECIEVER; // neighbors are marked as interpolated
+          }
+        }
+      }
+
+    }
+
+    /* pType : 3 = interpolated, 5 = boundary condition specified */
+    void MarkBoundaryPointType(const unsigned short ptType) {
+
+      /* marks all the boundaries (for component meshes marked as intepolated. Assumed component meshes dont overlap each other nor do they intersect boundaries) */
+      for (size_t iBound = 0; iBound < boundaryPoints.size(); ++iBound) {
+        /* iterate over all points in iBound*/
+        for (size_t iBoundPoint = 0; iBoundPoint < boundaryPoints[iBound].size(); ++iBoundPoint){
+          size_t point = boundaryPoints[iBound][iBoundPoint];
+          pointType[point] = ptType;
+        }
+      }
+    }
+
+    void StoreInterpolationStencil(const StructuredMesh& oversetMesh) {
+      for (size_t iPoint = 0; iPoint < numberOfPoints; ++iPoint) {
+        /* skip points which are not interpolated*/
+        if (pointType[iPoint] != INTERPOLATION_RECIEVER ) {
+          continue;
+        }
+        auto pointBBox = GetPointBBox(iPoint);
+        const auto BBox = oversetMesh.adtBoundingBox.searchADT(pointBBox);
+        if (BBox.size() == 0) {
+          cerr << " No donor found for interpolation marked point." << endl;
+        } else {
+          // interpolationStencil[iPoint].push_back(BBox[0]);
+          auto donorStencil = oversetMesh.elementConnectivity[BBox[0]];
+          vector<vector<double> > donorCoords (dimension);
+          for (size_t iDonor = 0; iDonor < donorStencil.size(); ++iDonor){
+            interpolationStencil[iPoint].push_back(donorStencil[iDonor]);
+            for (unsigned short iDim = 0; iDim < dimension; ++iDim){
+              donorCoords[iDim].push_back(oversetMesh.pointCoordinates[iDim][donorStencil[iDonor]]);
+            }
+          }
+          vector<double> receiverCoords;
+          for(unsigned short iDim = 0; iDim < dimension; ++iDim) {
+            receiverCoords.push_back(pointCoordinates[iDim][iPoint]);
+          }
+          interpolationCoeffs[iPoint] = interpolation_coeff(donorCoords, receiverCoords);
+        }
+      }
+    }
+
+    void WriteTxtPointType(string filename = "pointType.txt") const{
+      ofstream pointTypeFile(filename);
+      if (!pointTypeFile.is_open()) {
+        std::cerr << "Error opening file: " << filename << std::endl;
+        return;
+      }
+      for (size_t iPoint = 0; iPoint < numberOfPoints; iPoint++) {
+        pointTypeFile << pointType[iPoint] << " ";
+        // if (iPoint % 100 == 0 && iPoint != 0) {pointType << endl;}
+      }
+      pointTypeFile.close();
+    }
+
+    void MeshSolve(const double del_t, const double alpha, const StructuredMesh& oversetMesh) {
+      /* loop over all points even interpolated and boundary and solve for calculated and interpolated for receiver*/
+      for (size_t j = 0; j < Ny; j++) {
+        for (size_t  i = 0; i < Nx; ++i) {
+          size_t point = GetPointNumber(i ,j), left = GetPointNumber(i-1 ,j), right = GetPointNumber(i+1 ,j), top = GetPointNumber(i ,j+1), bottom = GetPointNumber(i ,j-1);
+          /* solve for calculated type i.e pointType = 1 */
+          if (pointType[point] == CALCULATED || pointType[point] == INTERPOLATION_DONOR || pointType[point] == DONOR_BUFFER) {
+            Tn1[point] = T[point] + del_t*alpha* ((T[left] - 2*T[point] + T[right])/pow(dx, 2) + (T[bottom] - 2*T[point] + T[top])/pow(dy, 2));
+          }
+          /* interpolate values for receiver type i.e pointType = 3 */
+          else if (pointType[point] == INTERPOLATION_RECIEVER) {
+            Tn1[point] = 0.0;
+            for(unsigned short iDonor = 0; iDonor < interpolationStencil[point].size(); ++iDonor) {
+              auto donorPointNumber = interpolationStencil[point][iDonor];
+              Tn1[point] = Tn1[point] + oversetMesh.Tn1[donorPointNumber] * interpolationCoeffs[point][iDonor];
+            }
+          }
+          else {
+            continue;
+          }
+        }
+      }
+    }
+
+    void ApplySpecifiedBoundaryCondition (vector<double> BC) {
+      boundaryCondition = BC;
+      for (unsigned short iBound = 0; iBound < boundaryPoints.size(); ++iBound) {
+        for (auto iBoundPoint : boundaryPoints[iBound]) {
+          T[iBoundPoint] = boundaryCondition[iBound];
+          Tn1[iBoundPoint] = boundaryCondition[iBound];
+        }
+      }
+    }
+
+    double RMS() const {
+      double rms = 0.0;
+      for (size_t j = 0; j < Ny; ++j) {
+        for (size_t i = 0; i < Nx; ++i) {
+          size_t point = GetPointNumber(i ,j);
+          if (pointType[point] == UNUNSED) {continue;}
+          rms += pow(Tn1[point] - T[point], 2);
+        }
+      }
+      rms = rms / (Nx * Ny);
+      rms = pow(rms, 0.5);
+      return rms;
+    }
+
+    void SaveToTxt(string filename) const {
+      // saving results to file
+      std::ofstream output_file(filename);
+      for(size_t j = 0; j < Ny; j++){
+        for(size_t i = 0; i < Nx; i++){
+          size_t point = GetPointNumber(i ,j);
+          output_file << std::fixed << std::setprecision(std::numeric_limits<double>::digits10+2) << Tn1[point]<<" ";
+        }
+        output_file << endl;
+      }
+    }
+};
+
+void oversetSolver(){
+  /* xOrigin, yOrigin, theta, lenght, width, Nx, Ny*/
+  StructuredMesh bgMesh(0.0, 0.0, 0.0, 1.0, 1.0, 50, 50);
+  StructuredMesh compMesh(0.445, 0.245, 45 * PI/180.0, 0.4, 0.4, 20, 20);
+  
+  // bgMesh.adtBoundingBox.writeDotToFile("bgADT.txt");
+
+  bgMesh.MarkOversetBoundaryDonors(compMesh);
+  bgMesh.MarkBoundaryPointType(BC_SPECIFIED);
+  compMesh.MarkBoundaryPointType(INTERPOLATION_RECIEVER);
+
+  bgMesh.StoreInterpolationStencil(compMesh);
+  compMesh.StoreInterpolationStencil(bgMesh);
+
+  bgMesh.WriteTxtPointType("bgPtType.txt");
+  compMesh.WriteTxtPointType("compPtType.txt");
+
+  /* numerical constants for PDE */
+  const double k = 16.2, rho = 7750, cp = 500.0;
+  const double alpha = k / (rho * cp);
+  const double del_t = (1 / (2 * alpha * (1/pow(min(bgMesh.dx, compMesh.dx), 2) + 1/pow(min(bgMesh.dy, compMesh.dy),2)))) * 0.9; // taking 90 % of the upper limit as per von Neumann stability analysis
+
+  /* counter clockwise from bottom edge : bottom, right, top, left */
+  bgMesh.ApplySpecifiedBoundaryCondition(vector<double> {200.0, 200.0, 100.0, 200.0});
+
+  double rmsBg = 1.0, rmsComp = 1.0;
+  int n = 0;
+  while ((rmsBg > TOLERANCE || rmsComp > TOLERANCE)){
+
+    bgMesh.MeshSolve(del_t, alpha, compMesh);
+    compMesh.MeshSolve(del_t, alpha, bgMesh);
+
+    rmsBg = bgMesh.RMS();
+    rmsComp = compMesh.RMS();
+
+    n = n+1;
+
+    bgMesh.T.swap(bgMesh.Tn1);
+    compMesh.T.swap(compMesh.Tn1);
+
+    if (n % 5000 == 0) {
+      cout << "Iterations = " << n << " RMS_Bg = " <<  rmsBg << " RMS_Comp = " <<  rmsComp << "\n";
+    }
+  }
+  cout << "Final Errors  = " << " RMS_Bg = " <<  rmsBg << " RMS_Comp = " <<  rmsComp << "\n";
+  cout << "Total Iterations = " << n << endl;
+
+  bgMesh.SaveToTxt("./num_mesh_bg.txt");
+  compMesh.SaveToTxt("./num_mesh_comp.txt");
+}
 
 void vecToText(const vec2d& T, string filename) {
   // saving results to file
@@ -404,6 +1039,7 @@ void solver() {
 }
 
 int main() {
-  solver();
+  // solver();
+  oversetSolver();
   return 0;
 }

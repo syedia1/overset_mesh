@@ -1,7 +1,13 @@
+import matplotlib as mpl
 from matplotlib import colors
 import matplotlib.pyplot as plt
 import numpy as np
 DTYPE = np.float64
+
+plt.rcParams["font.family"] = "Times New Roman"
+plt.rcParams.update({'font.size': 14})
+
+PI = np.pi
 
 # mesh_file = np.genfromtxt("rect-0000-100x100"+".su2", DTYPE, skip_header=pow(100,2)+2, skip_footer=)
 
@@ -30,27 +36,39 @@ DTYPE = np.float64
 # y = meshPoint[:, 1]
 """ ----- End ----- SU2 Mesh Input  """
 
-nx, ny = (100 + 1, 100 + 1)
-_x = np.linspace(0, 1, nx)
-_y = np.linspace(0, 1, ny)
-x, y = np.meshgrid(_x, _y)
+# /* xOrigin, yOrigin, theta, lenght, width, Nx, Ny*/
+# meshIdx = 0
+meshNames = ["bg", "comp"] 
+mesh = np.array([(0.0, 0.0, 0.0, 1.0, 1.0, 50, 50), (0.445, 0.245, 45 * PI/180.0, 0.4, 0.4, 20, 20)])
+for meshIdx in range(2):
+  meshDetails = mesh[meshIdx]
+  xOrgin, yOrigin = meshDetails[0], meshDetails[1]
+  theta = meshDetails[2]
+  L, W = meshDetails[3], meshDetails[4]
+  Nx, Ny = int(meshDetails[5]), int(meshDetails[6])
+  _x = np.linspace(0, L, Nx)
+  _y = np.linspace(0, W, Ny)
+  xLocal, yLocal = np.meshgrid(_x, _y)
+  x = xOrgin + xLocal*np.cos(theta) - yLocal*np.sin(theta)
+  y = yOrigin + xLocal*np.sin(theta) + yLocal*np.cos(theta)
 
-pointTypeData = np.loadtxt("/Users/zlatangg/Documents/Overset/overset_mesh/bgPtType.txt")
-print(pointTypeData.shape)
-
-
-pointType = np.linspace(-0.5, 4.5, 6);
-pointTypeLabels = ["unused", "calculated", "donor", "receiver", "donor buffer"];
-pointTypeLabels = [str(int(m))+" : "+n for m,n in zip(pointType+0.5, pointTypeLabels)]
-cmap = plt.cm.jet
-norm = colors.BoundaryNorm(pointType, cmap.N)
-
-
-fig, ax = plt.subplots()
-im = ax.scatter(x, y, c=pointTypeData, cmap=cmap, norm=norm)
-cbar = fig.colorbar(im, ax=ax)
-cbar.set_ticks(ticks=pointType[:-1]+0.5, labels=pointTypeLabels)
+  pointTypeData = np.loadtxt("/Users/zlatangg/Documents/Overset/overset_mesh/"+meshNames[meshIdx]+"PtType.txt")
+  print(pointTypeData.shape)
 
 
-plt.show()
+  pointTypeLabels = ["unused", "calculated", "donor", "receiver", "donor buffer", "bc specified"];
+  pointType = np.linspace(-0.5, 5.5, len(pointTypeLabels)+1)
+  pointTypeLabels = [str(int(m))+" : "+n for m,n in zip(pointType+0.5, pointTypeLabels)]
+  cmap = mpl.colormaps["turbo"]
+  norm = colors.BoundaryNorm(pointType, cmap.N)
+
+
+  imageScale = np.floor([Nx/mesh[1][-2], Ny/mesh[1][-1]])
+  fig, ax = plt.subplots(figsize=(7 * imageScale[0], 5*imageScale[1]))
+  # im = ax.scatter(x, y, c=pointTypeData, cmap=cmap, norm=norm)
+  im = ax.plot(x, y)
+  # cbar = fig.colorbar(im, ax=ax)
+  # cbar.set_ticks(ticks=pointType[:-1]+0.5, labels=pointTypeLabels)
+  # plt.show()
+  fig.savefig(meshNames[meshIdx]+"HoleCut.png", bbox_inches ="tight", pad_inches = 0.2)
 
