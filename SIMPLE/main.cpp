@@ -8,62 +8,65 @@ using namespace std;
 const size_t ITER_PRINT_FREQ = 10000;
 
 class DataStructure {
-   public:
-    int Nx, Ny;
-    double dx, dy, Lx, Ly;
-    double dt;
-    int nVar;
-    vector<vector<vector<double> > > Var;
-    vector<vector<vector<double> > > VarOld;
-    vector<vector<vector<double> > > Ff;
-    vector<double> Init;
-    vector<double> residual;
-    double ulid;
-    int Dim;
-    double volp;
-    double nu;
-    double rho;
+	public:
+		int Dim;
+		int nVar;
+		double dx, dy, Lx, Ly;
+		int Nx, Ny;
+		double dt;
+		double volp;
+		
+		double ulid;
+		double nu;
+		double rho;
+
+		vector<vector<vector<double> > > Var;
+		vector<vector<vector<double> > > VarOld;
+		vector<vector<vector<double> > > Ff;
+		vector<double> Init;
+		vector<double> residual;
+
+		DataStructure(double lengthX, double lengthY, size_t _Nx, size_t _Ny) {
+            Dim = 2;
+			nVar = 3;
+
+			Lx = lengthX, Ly = lengthY;
+			Nx = _Nx, Ny = _Ny;
+			dx = Lx / Nx;
+			dy = Ly / Ny;
+			dt = 0.001;
+			volp = dx * dy;
+			
+			/* Physical constants*/
+			ulid = 1.0;
+			nu = 0.01;
+    		rho = 1.0;
+
+			Init.resize(nVar);
+			Var.resize(nVar);
+			VarOld.resize(nVar);
+
+			for (int i = 0; i < nVar; i++) {
+				Var[i].resize(Nx + 2);
+				VarOld[i].resize(Nx + 2);
+				for (int j = 0; j < (Nx + 2); j++) {
+					Var[i][j].resize(Ny + 2, 0.0);
+					VarOld[i][j].resize(Ny + 2, 0.0);
+				}
+			}
+			residual.resize(nVar);
+			Ff.resize(2 * Dim);  // No of faces per cell = 4  i=0,1,2,3 -> E,N,W,S
+			for (int k = 0; k < (2 * Dim); k++) {
+				Ff[k].resize(Nx + 2);
+				for (int j = 0; j < (Nx + 2); j++) {
+					Ff[k][j].resize(Ny + 2, 0.0);
+				}
+			}
+        }
 };
 
 void CopyNewtoOld(DataStructure *rect) {
     std::copy(rect->Var.begin(), rect->Var.end(), rect->VarOld.begin());
-}
-
-void allocate(DataStructure *rect) {
-    rect->Nx = 100;
-    rect->Ny = 100;
-    rect->Lx = 1.0;
-    rect->Ly = 1.0;
-    rect->dx = (rect->Lx / rect->Nx);
-    rect->dy = (rect->Ly / rect->Ny);
-    rect->dt = 0.001;  // 0.5*(rect->dx*rect->dx * rect->dy*rect->dy)/(rect->alpha * (rect->dx*rect->dx + rect->dy*rect->dy));
-
-    rect->nVar = 3;
-    rect->Init.resize(rect->nVar, 0.0);
-    rect->Var.resize(rect->nVar);
-    rect->VarOld.resize(rect->nVar);
-    rect->ulid = 1.0;
-    rect->Dim = 2;
-    rect->volp = rect->dx * rect->dy;
-    rect->nu = 0.01;
-    rect->rho = 1.0;
-
-    for (int i = 0; i < rect->nVar; i++) {
-        rect->Var[i].resize(rect->Nx + 2);
-        rect->VarOld[i].resize(rect->Nx + 2);
-        for (int j = 0; j < (rect->Nx + 2); j++) {
-            rect->Var[i][j].resize(rect->Ny + 2, 0.0);
-            rect->VarOld[i][j].resize(rect->Ny + 2, 0.0);
-        }
-    }
-    rect->residual.resize(rect->nVar);
-    rect->Ff.resize(2 * rect->Dim);  // No of faces per cell = 4  i=0,1,2,3 -> E,N,W,S
-    for (int k = 0; k < (2 * rect->Dim); k++) {
-        rect->Ff[k].resize(rect->Nx + 2);
-        for (int j = 0; j < (rect->Nx + 2); j++) {
-            rect->Ff[k][j].resize(rect->Ny + 2, 0.0);
-        }
-    }
 }
 
 void ApplyBC(DataStructure *rect, int k) {
@@ -331,8 +334,7 @@ void Solve(DataStructure *rect) {
 }
 
 int main() {
-    DataStructure rect;
-    allocate(&rect);
+    DataStructure rect(1.0, 1.0, 100, 100);
     initialize(&rect);
     Solve(&rect);
     GetOutput(&rect, "output_Quick_test.dat");
