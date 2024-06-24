@@ -300,22 +300,12 @@ void UpdateFlux(DataStructure *rect)
             } 
 }
 
-void PressureFlux(DataStructure *rect,double *Fp, int i, int j, int k)
-{
-    if(k==0)
-     *Fp=-rect->dy/(rect->rho*2.0) * (rect->Var[2][i+1][j] - rect->Var[2][i-1][j]);
-    else if(k==1)
-     *Fp=-rect->dx/(rect->rho*2.0) * (rect->Var[2][i][j+1] - rect->Var[2][i][j-1]);   
-    //rect->volp*((rect->Var[k][i+1][j]-2.0*rect->Var[k][i][j]+rect->Var[k][i-1][j])/(rect->dx*rect->dx) + (rect->Var[k][i][j+1]-2.0*rect->Var[k][i][j]+rect->Var[k][i][j-1])/(rect->dy*rect->dy));
-     
-}
-
 void ImplicitSolve(DataStructure *rect)
 {
     for(int k=0; k<rect->nVar; k++){
             rect->residual[k] = 0.0; 
     }
-   double Fc, ap_c, Fd, ap_d, ap, R, rms, Fp;  //No of faces per cell = 4  i=0,1,2,3 -> E,N,W,S
+   double Fc, ap_c, Fd, ap_d, ap, R, rms;  //No of faces per cell = 4  i=0,1,2,3 -> E,N,W,S
 
   //Solving for U and V
     for(int k=0; k<2; k++){
@@ -330,7 +320,7 @@ void ImplicitSolve(DataStructure *rect)
                       //  SimpleUpwind(rect, &Fc, &ap_c, i,j, k);  
                         Quick(rect, &Fc, &ap_c, i,j, k);  
                         DiffusiveFlux(rect, &Fd, &ap_d, i, j, k); 
-                        R = -(rect->volp/rect->dt * (rect->Var[k][i][j] - rect->VarOld[k][i][j]) + Fc + (-rect->nu)*Fd) + Fp;
+                        R = -(rect->volp/rect->dt * (rect->Var[k][i][j] - rect->VarOld[k][i][j]) + Fc + (-rect->nu)*Fd);
                         ap = rect->volp/rect->dt + ap_c + (-rect->nu)*ap_d;
                         rect->Var[k][i][j] = rect->Var[k][i][j] + R/ap;
                         rms = rms + R*R;
@@ -364,7 +354,7 @@ void ImplicitSolve(DataStructure *rect)
          ApplyBC(rect, k);
          rms = sqrt(rms/(rect->Nx*rect->Ny));
       }while(rms > 1e-6);
-         
+      
     // Correcting Velocity
            for(int i = 1; i<rect->Nx+1; i++)
           {
