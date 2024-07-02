@@ -8,10 +8,12 @@
 #include <queue>
 #include <random>
 #include <algorithm>
+#include <iostream>
+#include <iomanip>
 
 using namespace std;
 
-const size_t ITER_PRINT_FREQ = 10000;
+const size_t ITER_PRINT_FREQ = 5000;
 const double PI = 3.141592653589793238463;
 const size_t NS_MAXITER = 20;
 const double TOLERANCE = 1024 * std::numeric_limits<double>::epsilon();
@@ -30,7 +32,6 @@ enum POINT_TYPE {
   DONOR_BUFFER = 4,
   BC_SPECIFIED = 5,
 };
-
 
 
 vector<double> solveAxB(const vector<vector<double> > &A, const vector<double> &B) {
@@ -373,12 +374,12 @@ class DataStructure {
 
 			xO = xOrigin, yO = yOrigin, theta = axisTheta;
 			Lx = lengthX, Ly = lengthY;
-			Nx = _Nx + 2, Ny = _Ny + 2;
+			Nx = _Nx, Ny = _Ny;
 			dx = Lx / Nx;
 			dy = Ly / Ny;
 
-			numberOfPoints = Nx * Ny;
-			numberOfElements = (Nx-1) * (Ny-1);
+			numberOfPoints = (Nx+2) * (Ny+2);
+			numberOfElements = (Nx+1) * (Ny+1);
 			dt = 0.001;
 			volp = dx * dy;
 			
@@ -395,19 +396,19 @@ class DataStructure {
 			interpolationCoeffs.resize(numberOfPoints);
 
 			for (int i = 0; i < nVar; i++) {
-				Var[i].resize(Nx);
-				VarOld[i].resize(Nx);
-				for (int j = 0; j < (Nx); j++) {
-					Var[i][j].resize(Ny, 0.0);
-					VarOld[i][j].resize(Ny, 0.0);
+				Var[i].resize(Nx+2);
+				VarOld[i].resize(Nx+2);
+				for (int j = 0; j < (Nx+2); j++) {
+					Var[i][j].resize(Ny+2, 0.0);
+					VarOld[i][j].resize(Ny+2, 0.0);
 				}
 			}
 			residual.resize(nVar);
 			Ff.resize(2 * Dim);  // No of faces per cell = 4  i=0,1,2,3 -> E,N,W,S
 			for (int k = 0; k < (2 * Dim); k++) {
-				Ff[k].resize(Nx + 2);
-				for (int j = 0; j < Nx; j++) {
-					Ff[k][j].resize(Ny, 0.0);
+				Ff[k].resize(Nx+2);
+				for (int j = 0; j < (Nx+2); j++) {
+					Ff[k][j].resize(Ny+2, 0.0);
 				}
 			}
 
@@ -419,11 +420,12 @@ class DataStructure {
 			}
 			pointType.resize(numberOfPoints, CALCULATED);
 			size_t iPoint = numberOfPoints;
-			for (size_t j = 0; j < Ny; ++j) {
-				for (size_t i = 0; i < Nx; i++) {
+			for (size_t j = 0; j < (Ny+2); ++j) {
+				for (size_t i = 0; i < (Nx+2); i++) {
 				iPoint = GetPointNumber(i, j);
-				pointCoordinates[0][iPoint] = xO + (i*dx) * cos(theta) - (j*dy)* sin(theta); /* global x axis*/
-				pointCoordinates[1][iPoint] = yO + (i*dx) * sin(theta) + (j*dy)* cos(theta); /* global y axis*/
+				/* cell centered so adding dx/2 and dy/2 to point coordinates*/
+				pointCoordinates[0][iPoint] = dx/2 + xO + (i*dx) * cos(theta) - (j*dy)* sin(theta); /* global x axis*/
+				pointCoordinates[1][iPoint] = dy/2 + yO + (i*dx) * sin(theta) + (j*dy)* cos(theta); /* global y axis*/
 				}
 			}
 
@@ -431,10 +433,10 @@ class DataStructure {
 			elementConnectivity.resize(numberOfElements);
 			elementBBox.resize(numberOfElements);
 			size_t iElement = numberOfElements;
-			for(size_t j = 0; j < Ny-1; ++j) {
-				for(size_t i = 0; i < Nx-1; ++i) {
+			for(size_t j = 0; j < Ny+1; ++j) {
+				for(size_t i = 0; i < Nx+1; ++i) {
 				iElement = GetElementNumber(i, j);
-				elementConnectivity[iElement].assign({j*Nx + i, j*Nx + i+1, (j+1)*Nx + i+1, (j+1)*Nx + i});
+				elementConnectivity[iElement].assign({j*(Nx+2) + i, j*(Nx+2) + i+1, (j+1)*(Nx+2) + i+1, (j+1)*(Nx+2) + i});
 				
 				/* Element cartesian aligned Bounding Box */
 				elementBBox[iElement].assign({su2double_highest, su2double_highest, su2double_lowest, su2double_lowest}); /* {Xmin, Ymin, Xmax, Ymax}*/
@@ -451,8 +453,8 @@ class DataStructure {
         
 			/* Neighbour points of point */
 			neighborPointsOfPoint.resize(numberOfPoints);
-			for (size_t j = 0; j < Ny-1; ++j) {
-				for (size_t i = 0; i < Nx-1; ++i) {
+			for (size_t j = 0; j < Ny+1; ++j) {
+				for (size_t i = 0; i < Nx+1; ++i) {
 				iElement = GetElementNumber(i, j);
 				size_t pointA, pointB;
 				for(size_t iPoint = 0; iPoint < elementConnectivity[iElement].size(); iPoint++) {
@@ -466,8 +468,8 @@ class DataStructure {
 			/* remove duplicates from the neighboring point lists*/
 			iPoint = numberOfPoints;
 			vector<size_t>::iterator vecIt;
-			for (size_t j = 0; j < Ny; ++j) {
-				for (size_t i = 0; i < Nx; ++i) {
+			for (size_t j = 0; j < Ny+2; ++j) {
+				for (size_t i = 0; i < Nx+2; ++i) {
 				iPoint = GetPointNumber(i, j);
 				/* sort neighboring points for each point */
 				sort(neighborPointsOfPoint[iPoint].begin(), neighborPointsOfPoint[iPoint].end());
@@ -482,13 +484,13 @@ class DataStructure {
 
 			/* Boundary Surfaces*/
 			boundaryPoints.resize(4); /* bottom, right, top, left*/
-			for(size_t iBoundPoint = 0; iBoundPoint < Nx; iBoundPoint++){
+			for(size_t iBoundPoint = 0; iBoundPoint < (Nx+2); iBoundPoint++){
 				boundaryPoints[0].push_back(iBoundPoint); /*bottom*/
-				boundaryPoints[2].push_back((Ny-1)*Nx + iBoundPoint); /*top*/
+				boundaryPoints[2].push_back((Ny+1)*(Nx+2) + iBoundPoint); /*top*/
 			}      
-			for(size_t iBoundPoint = 0; iBoundPoint < Ny; iBoundPoint++){
-				boundaryPoints[3].push_back(iBoundPoint*Nx); /*left*/
-				boundaryPoints[1].push_back(Nx*iBoundPoint + (Nx-1)); /*right*/
+			for(size_t iBoundPoint = 0; iBoundPoint < (Ny+2); iBoundPoint++){
+				boundaryPoints[3].push_back(iBoundPoint*(Nx+2)); /*left*/
+				boundaryPoints[1].push_back((Nx+2)*iBoundPoint + (Nx+1)); /*right*/
 			}
 			reverse(boundaryPoints[2].begin(), boundaryPoints[2].end());
 			reverse(boundaryPoints[3].begin(), boundaryPoints[3].end());
@@ -497,8 +499,9 @@ class DataStructure {
 			GenerateADT();
 		}
 
-		inline size_t GetElementNumber (size_t i, size_t j) const {return j*(Nx-1) + i;}
-   		inline size_t GetPointNumber (size_t i, size_t j) const {return j*Nx + i;}
+		inline size_t GetElementNumber (size_t i, size_t j) const {return j*(Nx+1) + i;}
+   		inline size_t GetPointNumber (size_t i, size_t j) const {return j*(Nx+2) + i;}
+   		inline std::tuple<size_t, size_t> GetijFromPointNumber (size_t iPoint) const {return {iPoint % (Nx+2), iPoint / (Nx+2)};}
 
 		virtual ~DataStructure() = default;
 
@@ -552,7 +555,7 @@ class DataStructure {
 					}
 					else {
 						if (BBox.size() != 1) {
-						cerr << "Point : "<< point << " Multiple interpolation stencil found [" << BBox.size() << "]. What to do ??" << endl;
+						// cerr << "Point : "<< point << " Multiple interpolation stencil found [" << BBox.size() << "]. What to do ??" << endl;
 						}
 						for (auto iPoint : elementConnectivity[BBox[0]]) {
 						// cout << "Marking iPoint = " << iPoint << " as donor " << endl;
@@ -644,8 +647,8 @@ class DataStructure {
 			}
 			else{
 				for (size_t iPoint = 0; iPoint < numberOfPoints; iPoint++) {
+					// if (iPoint % (Nx) == 0 && iPoint !=0) {pointTypeFile << endl;}
 					pointTypeFile << pointType[iPoint] << " ";
-					// if (iPoint % 100 == 0 && iPoint != 0) {pointType << endl;}
 				}
 				pointTypeFile.close();
 			}
@@ -663,49 +666,71 @@ void CopyNewtoOld(DataStructure *rect) {
     std::copy(rect->Var.begin(), rect->Var.end(), rect->VarOld.begin());
 }
 
-void ApplyBC(DataStructure *rect, int k) {
-    switch (k) {
-        case 0:  // U
+void ApplyBC(DataStructure *rect, int k, DataStructure *oversetMesh) {
+    if (rect->pointType[0] == INTERPOLATION_RECIEVER) {
+		// cout << "Interpolating at boundary for k = " << k << endl;
+		for (size_t iBound = 0; iBound < rect->boundaryPoints.size(); ++iBound) {
+			for (size_t iBoundPoint = 0; iBoundPoint < rect->boundaryPoints[iBound].size(); ++iBoundPoint){
+				size_t point = rect->boundaryPoints[iBound][iBoundPoint];
+				auto [i, j] = rect->GetijFromPointNumber(point);
+				rect->Var[k][i][j] = 0.0;
+				for(unsigned short iDonor = 0; iDonor < rect->interpolationStencil[point].size(); ++iDonor) {
+					auto donorPointNumber = rect->interpolationStencil[point][iDonor];
+					auto [_iDonor, _jDonor] = oversetMesh->GetijFromPointNumber(donorPointNumber);
+					rect->Var[k][i][j] = rect->Var[k][i][j] + oversetMesh->Var[k][_iDonor][_jDonor] * rect->interpolationCoeffs[point][iDonor];
+				}
+        	}
+		}
+	}
+	else {
+		// cout << "Applying specified BC for k = " << k << endl;
+		switch (k) {
+			case 0:  // U
 
-            for (int j = 1; j < rect->Ny + 1; j++) {
-                rect->Var[k][0][j] = 2 * (0.0) - rect->Var[k][1][j];                    // Left
-                rect->Var[k][rect->Nx + 1][j] = 2 * (0.0) - rect->Var[k][rect->Nx][j];  // Right
-            }
-            for (int i = 1; i < rect->Nx + 1; i++) {
-                rect->Var[k][i][rect->Ny + 1] = 2 * rect->ulid - rect->Var[k][i][rect->Ny];  // Top
-                rect->Var[k][i][0] = 2 * (0.0) - rect->Var[k][i][1];                         // Bottom
-            }
-            break;
+				for (int j = 1; j < rect->Ny + 1; j++) {
+					rect->Var[k][0][j] = 2 * (0.0) - rect->Var[k][1][j];                    // Left
+					rect->Var[k][rect->Nx + 1][j] = 2 * (0.0) - rect->Var[k][rect->Nx][j];  // Right
+				}
+				for (int i = 1; i < rect->Nx + 1; i++) {
+					rect->Var[k][i][rect->Ny + 1] = 2 * rect->ulid - rect->Var[k][i][rect->Ny];  // Top
+					rect->Var[k][i][0] = 2 * (0.0) - rect->Var[k][i][1];                         // Bottom
+				}
+				break;
 
-        case 1:  // V
+			case 1:  // V
 
-            for (int j = 1; j < rect->Ny + 1; j++) {
-                rect->Var[k][0][j] = 2 * (0.0) - rect->Var[k][1][j];                    // Left
-                rect->Var[k][rect->Nx + 1][j] = 2 * (0.0) - rect->Var[k][rect->Nx][j];  // Right
-            }
-            for (int i = 1; i < rect->Nx + 1; i++) {
-                rect->Var[k][i][rect->Ny + 1] = 2 * (0.0) - rect->Var[k][i][rect->Ny];  // Top
-                rect->Var[k][i][0] = 2 * (0.0) - rect->Var[k][i][1];                    // Bottom
-            }
-            break;
+				for (int j = 1; j < rect->Ny + 1; j++) {
+					rect->Var[k][0][j] = 2 * (0.0) - rect->Var[k][1][j];                    // Left
+					rect->Var[k][rect->Nx + 1][j] = 2 * (0.0) - rect->Var[k][rect->Nx][j];  // Right
+				}
+				for (int i = 1; i < rect->Nx + 1; i++) {
+					rect->Var[k][i][rect->Ny + 1] = 2 * (0.0) - rect->Var[k][i][rect->Ny];  // Top
+					rect->Var[k][i][0] = 2 * (0.0) - rect->Var[k][i][1];                    // Bottom
+				}
+				break;
 
-        case 2:  // P (All Neumann Condition)
+			case 2:  // P (All Neumann Condition)
 
-            for (int j = 1; j < rect->Ny + 1; j++) {
-                rect->Var[k][0][j] = rect->Var[k][1][j];                    // Left
-                rect->Var[k][rect->Nx + 1][j] = rect->Var[k][rect->Nx][j];  // Right
-            }
-            for (int i = 1; i < rect->Nx + 1; i++) {
-                rect->Var[k][i][rect->Ny + 1] = rect->Var[k][i][rect->Ny];  // Top
-                rect->Var[k][i][0] = rect->Var[k][i][1];                    // Bottom
-            }
-            break;
-    }
+				for (int j = 1; j < rect->Ny + 1; j++) {
+					rect->Var[k][0][j] = rect->Var[k][1][j];                    // Left
+					rect->Var[k][rect->Nx + 1][j] = rect->Var[k][rect->Nx][j];  // Right
+				}
+				for (int i = 1; i < rect->Nx + 1; i++) {
+					rect->Var[k][i][rect->Ny + 1] = rect->Var[k][i][rect->Ny];  // Top
+					rect->Var[k][i][0] = rect->Var[k][i][1];                    // Bottom
+				}
+				break;
+		}
+	}
 }
 
 void LinearInterpolation(DataStructure *rect) {
     for (int i = 1; i < rect->Nx + 1; i++) {
         for (int j = 1; j < rect->Ny + 1; j++) {
+			size_t point = rect->GetPointNumber(i, j);
+			if (rect->pointType[point] == UNUNSED || rect->pointType[point] == INTERPOLATION_RECIEVER) {
+				continue;
+			}
             rect->Ff[0][i][j] = (rect->Var[0][i][j] + rect->Var[0][i + 1][j]) * rect->dy * 0.5;   // East Face
             rect->Ff[1][i][j] = (rect->Var[1][i][j] + rect->Var[1][i][j + 1]) * rect->dx * 0.5;   // North Face
             rect->Ff[2][i][j] = -(rect->Var[0][i][j] + rect->Var[0][i - 1][j]) * rect->dy * 0.5;  // West Face
@@ -714,7 +739,7 @@ void LinearInterpolation(DataStructure *rect) {
     }
 }
 
-void initialize(DataStructure *rect) {
+void initialize(DataStructure *rect, DataStructure *oversetMesh) {
     // initializing interior values
     for (int k = 0; k < rect->nVar; k++) {
         // for (int i = 1; i < rect->Nx + 1; i++) {
@@ -722,7 +747,7 @@ void initialize(DataStructure *rect) {
         //         rect->Var[k][i][j] = rect->Init[k];
         //     }
         // }
-        ApplyBC(rect, k);
+        ApplyBC(rect, k, oversetMesh);
     }
 
     CopyNewtoOld(rect);
@@ -735,8 +760,8 @@ void GetOutput(DataStructure *rect, std::string input) {
 
     for (int k = 0; k < rect->nVar; k++) {
         fprintf(fp, "\n ########## Data for k = %d ############ \n", k);
-        for (int i = 0; i < rect->Nx + 2; i++) {
-            for (int j = 0; j < rect->Ny + 2; j++) {
+		for (int j = 0; j < rect->Ny + 2; j++) {
+        	for (int i = 0; i < rect->Nx + 2; i++) {
                 fprintf(fp, "%lf \t", rect->Var[k][i][j]);
             }
             fprintf(fp, "\n");
@@ -822,6 +847,10 @@ void DiffusiveFlux(DataStructure *rect, double *Fd, double *ap_d, int i, int j, 
 void UpdateFlux(DataStructure *rect) {
     for (int i = 1; i < rect->Nx + 1; i++) {
         for (int j = 1; j < rect->Ny + 1; j++) {
+			size_t point = rect->GetPointNumber(i, j);
+			if (rect->pointType[point] == UNUNSED || rect->pointType[point] == INTERPOLATION_RECIEVER) {
+				continue;
+			}
             rect->Ff[0][i][j] += -rect->dt / rect->rho * (rect->Var[2][i + 1][j] - rect->Var[2][i][j]) * rect->dy / rect->dx;  // East Face
             rect->Ff[1][i][j] += -rect->dt / rect->rho * (rect->Var[2][i][j + 1] - rect->Var[2][i][j]) * rect->dx / rect->dy;  // North Face
             rect->Ff[2][i][j] += -rect->dt / rect->rho * (rect->Var[2][i - 1][j] - rect->Var[2][i][j]) * rect->dy / rect->dx;  // West Face
@@ -830,84 +859,182 @@ void UpdateFlux(DataStructure *rect) {
     }
 }
 
-void ImplicitSolve(DataStructure *rect) {
-    for (int k = 0; k < rect->nVar; k++) {
+double SolveUV(DataStructure *rect, DataStructure *oversetMesh, int k) {
+	/* k determines U or V. k = 0 -> U*/
+	int count = 0;
+	double Fc, ap_c, Fd, ap_d, ap, R, rms;
+	rms = 0.0;
+	for (int i = 1; i < rect->Nx + 1; i++) {
+		for (int j = 1; j < rect->Ny + 1; j++) {
+			size_t point = rect->GetPointNumber(i, j);
+			if (rect->pointType[point] == UNUNSED) {
+				continue;
+			}
+			if (rect->pointType[point] == CALCULATED || rect->pointType[point] == INTERPOLATION_DONOR || rect->pointType[point] == DONOR_BUFFER) {
+				SimpleUpwind(rect, &Fc, &ap_c, i, j, k);
+				// Quick(rect, &Fc, &ap_c, i, j, k);
+				DiffusiveFlux(rect, &Fd, &ap_d, i, j, k);
+				R = -(rect->volp / rect->dt * (rect->Var[k][i][j] - rect->VarOld[k][i][j]) + Fc + (-rect->nu) * Fd);
+				ap = rect->volp / rect->dt + ap_c + (-rect->nu) * ap_d;
+				count++;
+				rect->Var[k][i][j] = rect->Var[k][i][j] + R / ap;
+			}
+			else if (rect->pointType[point] == INTERPOLATION_RECIEVER) {
+				double temp = rect->Var[k][i][j];
+				rect->Var[k][i][j] = 0.0;
+				for(unsigned short iDonor = 0; iDonor < rect->interpolationStencil[point].size(); ++iDonor) {
+					auto donorPointNumber = rect->interpolationStencil[point][iDonor];
+					auto [_iDonor, _jDonor] = oversetMesh->GetijFromPointNumber(donorPointNumber);
+					rect->Var[k][i][j] = rect->Var[k][i][j] + oversetMesh->Var[k][_iDonor][_jDonor] * rect->interpolationCoeffs[point][iDonor];
+				}
+				// R = temp - rect->Var[k][i][j];
+				R = 0.0;
+			}
+			rms = rms + R * R;
+		}
+	}
+	ApplyBC(rect, k, oversetMesh);
+	rms = sqrt(rms / (rect->Nx * rect->Ny));
+	return rms;
+}
+
+double SolveP(DataStructure *rect, DataStructure *oversetMesh, int k = 2) {
+	/* for P k = 2 (in Var array)*/
+	int count = 0;
+	double Fd, ap_d, ap, R, rms;
+	rms = 0.0;
+	for (int i = 1; i < rect->Nx + 1; i++) {
+		for (int j = 1; j < rect->Ny + 1; j++) {
+			size_t point = rect->GetPointNumber(i, j);
+			if (rect->pointType[point] == UNUNSED) {
+				continue;
+			}
+			if (rect->pointType[point] == CALCULATED || rect->pointType[point] == INTERPOLATION_DONOR || rect->pointType[point] == DONOR_BUFFER) {
+				DiffusiveFlux(rect, &Fd, &ap_d, i, j, k);
+				double LHS = Fd;
+				double RHS = rect->rho / rect->dt * (rect->Ff[0][i][j] + rect->Ff[1][i][j] + rect->Ff[2][i][j] + rect->Ff[3][i][j]);
+				R = RHS - LHS;
+				ap = ap_d;
+				count++;
+				rect->Var[k][i][j] = rect->Var[k][i][j] + R / ap;
+			}
+			else if (rect->pointType[point] == INTERPOLATION_RECIEVER) {
+				double temp = rect->Var[k][i][j];
+				rect->Var[k][i][j] = 0.0;
+				for(unsigned short iDonor = 0; iDonor < rect->interpolationStencil[point].size(); ++iDonor) {
+					auto donorPointNumber = rect->interpolationStencil[point][iDonor];
+					auto [_iDonor, _jDonor] = oversetMesh->GetijFromPointNumber(donorPointNumber);
+					rect->Var[k][i][j] = rect->Var[k][i][j] + oversetMesh->Var[k][_iDonor][_jDonor] * rect->interpolationCoeffs[point][iDonor];
+				}
+				// R = temp - rect->Var[k][i][j];
+				R = 0.0;
+			}
+			rms = rms + R * R;
+		}
+	}
+	ApplyBC(rect, k, oversetMesh);
+	rms = sqrt(rms / (rect->Nx * rect->Ny));
+	return rms;
+}
+
+void CorrectVelocity(DataStructure *rect){
+	for (int k = 0; k < rect->nVar; k++) {
         rect->residual[k] = 0.0;
     }
-    double Fc, ap_c, Fd, ap_d, ap, R, rms;  // No of faces per cell = 4  i=0,1,2,3 -> E,N,W,S
-
-    // Solving for U and V
-    for (int k = 0; k < 2; k++) {
-        do {
-            rms = 0.0;
-            for (int i = 1; i < rect->Nx + 1; i++) {
-                for (int j = 1; j < rect->Ny + 1; j++) {
-                    //  SimpleUpwind(rect, &Fc, &ap_c, i,j, k);
-                    Quick(rect, &Fc, &ap_c, i, j, k);
-                    DiffusiveFlux(rect, &Fd, &ap_d, i, j, k);
-                    R = -(rect->volp / rect->dt * (rect->Var[k][i][j] - rect->VarOld[k][i][j]) + Fc + (-rect->nu) * Fd);
-                    ap = rect->volp / rect->dt + ap_c + (-rect->nu) * ap_d;
-                    rect->Var[k][i][j] = rect->Var[k][i][j] + R / ap;
-                    rms = rms + R * R;
-                }
-            }
-            ApplyBC(rect, k);
-            rms = sqrt(rms / (rect->Nx * rect->Ny));
-        } while (rms > 1e-6);
-    }
-
-    LinearInterpolation(rect);
-
-    // Solving for P
-    int k = 2;
-    do {
-        rms = 0.0;
-        for (int i = 1; i < rect->Nx + 1; i++) {
-            for (int j = 1; j < rect->Ny + 1; j++) {
-                DiffusiveFlux(rect, &Fd, &ap_d, i, j, k);
-                double LHS = Fd;
-                double RHS = rect->rho / rect->dt * (rect->Ff[0][i][j] + rect->Ff[1][i][j] + rect->Ff[2][i][j] + rect->Ff[3][i][j]);
-                R = RHS - LHS;
-                ap = ap_d;
-                rect->Var[k][i][j] = rect->Var[k][i][j] + R / ap;
-                rms = rms + R * R;
-            }
-        }
-        ApplyBC(rect, k);
-        rms = sqrt(rms / (rect->Nx * rect->Ny));
-    } while (rms > 1e-6);
-
-    // Correcting Velocity
+	// Correcting Velocity
+	int k;
     for (int i = 1; i < rect->Nx + 1; i++) {
         for (int j = 1; j < rect->Ny + 1; j++) {
-            k = 0;
+			size_t point = rect->GetPointNumber(i, j);
+            if (rect->pointType[point] == UNUNSED || rect->pointType[point] == INTERPOLATION_RECIEVER) {
+				continue;
+			}
+			k = 0;
             rect->Var[k][i][j] = rect->Var[k][i][j] - rect->dt / rect->rho * (rect->Var[2][i + 1][j] - rect->Var[2][i - 1][j]) / (2 * rect->dx);
             k = 1;
             rect->Var[k][i][j] = rect->Var[k][i][j] - rect->dt / rect->rho * (rect->Var[2][i][j + 1] - rect->Var[2][i][j - 1]) / (2 * rect->dy);
 
-            rect->residual[0] += (rect->Var[0][i][j] - rect->VarOld[0][i][j]) * (rect->Var[0][i][j] - rect->VarOld[0][i][j]);
-            rect->residual[1] += (rect->Var[1][i][j] - rect->VarOld[1][i][j]) * (rect->Var[1][i][j] - rect->VarOld[1][i][j]);
-            rect->residual[2] += (rect->Var[2][i][j] - rect->VarOld[2][i][j]) * (rect->Var[2][i][j] - rect->VarOld[2][i][j]);
+			// calculating residuals for u, v, p
+			for (int k = 0; k < rect->nVar; ++k) {
+            	rect->residual[k] += (rect->Var[k][i][j] - rect->VarOld[k][i][j]) * (rect->Var[k][i][j] - rect->VarOld[k][i][j]);
+			}
+            // rect->residual[0] += (rect->Var[0][i][j] - rect->VarOld[0][i][j]) * (rect->Var[0][i][j] - rect->VarOld[0][i][j]);
+            // rect->residual[1] += (rect->Var[1][i][j] - rect->VarOld[1][i][j]) * (rect->Var[1][i][j] - rect->VarOld[1][i][j]);
+            // rect->residual[2] += (rect->Var[2][i][j] - rect->VarOld[2][i][j]) * (rect->Var[2][i][j] - rect->VarOld[2][i][j]);
         }
     }
-    ApplyBC(rect, 0);
-    ApplyBC(rect, 1);
+}
+
+void ImplicitSolve(DataStructure *rect, DataStructure *oversetMesh, int outerIter) {
+    // double Fc, ap_c, Fd, ap_d, ap, R, rms;  // No of faces per cell = 4  i=0,1,2,3 -> E,N,W,S
+
+	double rmsOldBg = 1.0, rmsOldComp = 1.0;
+    // Solving for U and V
+	int iter = 0;
+	double rmsBg = 1.0, rmsComp = 1.0;
+	const int MAXITER = 50;
+	const double UVTolerance = 1e-6;
+	for (int k = 0; k < 2; k++) {
+			do {
+		rmsOldBg = rmsBg;
+		rmsOldComp = rmsComp;
+		rmsBg = SolveUV(rect, oversetMesh, k);
+		rmsComp = SolveUV(oversetMesh, rect, k);
+		// cout << "RMS U,V: " << rmsBg << " " << rmsComp << " Iter: " << iter << endl;
+		iter++;
+		if (iter > MAXITER) {break;}
+			} while ((rmsBg > UVTolerance || rmsComp > UVTolerance) && (rmsOldBg > rmsBg || rmsOldComp > rmsComp));
+	}
+	// if (outerIter % 100 == 0) {
+	// 	cout << "RMS U,V: " << rmsBg << " " << rmsComp << " Iter: " << iter; // << endl;
+	// }
+	LinearInterpolation(rect);
+	LinearInterpolation(oversetMesh);
+
+	// Solving for P
+	int k = 2;
+	iter = 0;
+	rmsBg = 1.0, rmsComp = 1.0;
+	rmsOldBg = 1.0, rmsOldComp = 1.0;
+	const double PTolerance = 1e-3;
+    do {
+		rmsOldBg = rmsBg;
+		rmsOldComp = rmsComp;
+		rmsBg = SolveP(rect, oversetMesh, k);
+		rmsComp = SolveP(oversetMesh, rect, k);
+		// if (iter % 1000 == 0){
+		// 	cout << "RMS P: " << rmsBg << " " << rmsComp << " Iter: " << iter << endl;
+		// }
+		iter++;
+		if (iter > MAXITER) {break;}
+    } while ((rmsBg > PTolerance || rmsComp > PTolerance) && (rmsOldBg > rmsBg || rmsOldComp > rmsComp));
+	// if (outerIter % (ITER_PRINT_FREQ/2) == 0) {
+	// 	cout << " RMS P: " << rmsBg << " " << rmsComp << " Iter: " << iter << endl;
+	// }
+	
+	CorrectVelocity(rect);
+	CorrectVelocity(oversetMesh);
+    for (int k = 0; k < 2; ++k) {
+		ApplyBC(rect, k, oversetMesh);
+		ApplyBC(oversetMesh, k, rect);
+	}
+
     UpdateFlux(rect);
+    UpdateFlux(oversetMesh);
 }
 
 bool ConvergenceCheck(DataStructure *rect, int count) {
     double rms[rect->nVar];
+		const double TOLERANCE = 1e-10;
     for (int k = 0; k < rect->nVar; k++) {
         rms[k] = sqrt(rect->residual[k] / (rect->Nx * rect->Ny));
         rms[k] = rms[k] / rect->dt;
         if (count % ITER_PRINT_FREQ == 0) {
-            cout << "\t" << rms[k];
+            cout << std::setprecision(3) << std::scientific << rms[k] << " " ;
         }
     }
-    if (count % ITER_PRINT_FREQ == 0) {
-        cout << endl;
-    }
-    if (rms[0] > 1e-12 || rms[1] > 1e-6 || rms[2] > 1e-6) {
+
+    if (rms[0] > TOLERANCE || rms[1] > TOLERANCE) {
         CopyNewtoOld(rect);
         return false;
     } else {
@@ -915,21 +1042,34 @@ bool ConvergenceCheck(DataStructure *rect, int count) {
     }
 }
 
-void Solve(DataStructure *rect) {
-    int count = 0;
+void Solve(DataStructure *rect, DataStructure *oversetMesh) {
+    int iter = 0;
+	bool mesh1 = true, mesh2 = false;
     do {
-        count++;
-        ImplicitSolve(rect);
-        if (count % ITER_PRINT_FREQ == 0) {
-            cout << " Iter: " << count;
+        ImplicitSolve(rect, oversetMesh, iter);
+        // ImplicitSolve(oversetMesh, rect);
+        if (iter % ITER_PRINT_FREQ == 0) {
+            cout << "OuterIter: " << std::setw(5) << iter;
         }
-    } while (!ConvergenceCheck(rect, count));
-    cout << "Solved in " << count << " iterations." << endl;
+        if (iter % ITER_PRINT_FREQ == 0) {
+			cout << " NS-RMS: ";
+        }
+		mesh1 = ConvergenceCheck(rect, iter);
+        if (iter % ITER_PRINT_FREQ == 0) {
+			cout << " - " ; 
+        }
+		mesh2 = ConvergenceCheck(oversetMesh, iter);
+		if (iter % ITER_PRINT_FREQ == 0) {
+        	cout << endl ;
+		}
+        iter++;
+    } while ((mesh1 == false || mesh2 == false) && iter < int(1e5));
+    cout << "Solved in " << iter << " iterations." << endl;
 }
 
 int main() {
-	DataStructure bgMesh(0.0, 0.0, 0.0, 1.0, 1.0, 100, 100);
-	DataStructure compMesh(0.445, 0.245, 45 * PI/180.0, 0.4, 0.4, 40, 40);
+	DataStructure bgMesh(0.0, 0.0, 0.0 * PI/180.0, 1.0, 1.0, 100, 100);
+	DataStructure compMesh(0.425, 0.425, 30.0 * PI/180.0, 0.4, 0.4, 40, 40);
 	bgMesh.MarkOversetBoundaryDonors(compMesh);
 	bgMesh.MarkBoundaryPointType(BC_SPECIFIED);
 	compMesh.MarkBoundaryPointType(INTERPOLATION_RECIEVER);
@@ -939,12 +1079,12 @@ int main() {
 
 	bgMesh.WriteTxtPointType("bgPtType.txt");
 	compMesh.WriteTxtPointType("compPtType.txt");
+	
 
-	bgMesh.AdjustNxNy();
-	compMesh.AdjustNxNy();
-
-	initialize(&bgMesh);
-	Solve(&bgMesh);
-	GetOutput(&bgMesh, "output_Quick_bgMesh.dat");
+	initialize(&bgMesh, &compMesh);
+	initialize(&compMesh, &bgMesh);
+	Solve(&bgMesh, &compMesh);
+	GetOutput(&bgMesh, "output_Upwind_bgMesh.dat");
+	GetOutput(&compMesh, "output_Upwind_compMesh.dat");
 	return 0;
 }
