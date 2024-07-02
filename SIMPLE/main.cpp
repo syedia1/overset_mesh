@@ -23,7 +23,7 @@ constexpr su2double su2double_lowest = std::numeric_limits<su2double>::lowest();
 constexpr su2double su2double_highest = std::numeric_limits<su2double>::max();
 
 enum POINT_TYPE {
-    UNUNSED = 0,
+    UNUSED = 0,
     CALCULATED = 1,
     INTERPOLATION_DONOR = 2,
     INTERPOLATION_RECIEVER = 3,
@@ -167,7 +167,7 @@ class ADT {
         // cout << "Element added " << current->elementIndex << " at h = " << heirarchy << endl;
     }
 
-    vector<size_t> searchADT(array<su2double, SU2_BBOX_SIZE> &testBBox) const {
+    vector<size_t> searchADT(const array<su2double, SU2_BBOX_SIZE> &testBBox) const {
         /*return a vector of indices of elements which intersect with the test bounding box*/
         size_t currHeirarchy = 0, i = 0;
         vector<size_t> intersectingBBox;
@@ -528,38 +528,81 @@ class DataStructure {
         return pointBBoxCoords;
     }
 
-    void MarkOversetBoundaryDonors(const DataStructure &oversetMesh) {
-        /* does a type of holecutting / removal of coarse cells where overlapping finer cells are present*/
 
-        /* iterate over all the boundaries of overset mesh to mark donors */
-        for (size_t iBound = 0; iBound < oversetMesh.boundaryPoints.size(); ++iBound) {
-            /* iterate over all points in iBound*/
-            for (size_t iBoundPoint = 0; iBoundPoint < oversetMesh.boundaryPoints[iBound].size(); ++iBoundPoint) {
-                size_t point = oversetMesh.boundaryPoints[iBound][iBoundPoint];
-                auto pointBBox = oversetMesh.GetPointBBox(point);
-                const auto BBox = adtBoundingBox.searchADT(pointBBox);
-                if (BBox.size() == 0) {
-                    cerr << "Point: " << point << " No interpolation stencil found. What to do ??" << endl;
-                } else {
-                    if (BBox.size() != 1) {
-                        // cerr << "Point : "<< point << " Multiple interpolation stencil found [" << BBox.size() << "]. What to do ??" << endl;
-                    }
-                    for (auto iPoint : elementConnectivity[BBox[0]]) {
-                        // cout << "Marking iPoint = " << iPoint << " as donor " << endl;
-                        pointType[iPoint] = 2;
-                        /* mark all neighbors as required (for complete stencil of donor)*/
-                        for (auto neighborPoint : neighborPointsOfPoint[iPoint]) {
-                            if (pointType[neighborPoint] == 2) {
-                                continue;
-                            }
-                            pointType[neighborPoint] = 4; /*donor buffer*/
-                        }
-                    }
+    vector<size_t> GetValidDonorBBox(const DataStructure &oversetMesh,const size_t iPoint) {
+		const auto pointBBox = GetPointBBox(iPoint);
+		const auto intersectingBBoxList = oversetMesh.adtBoundingBox.searchADT(pointBBox);
+		
+		if (intersectingBBoxList.size() == 0) {
+			// cerr << "Point: " << iPoint << " No interpolation stencil found. What to do ??" << endl;
+		}
+	    bool validInterpolation = true;
+		vector<size_t> validBBox;
+		vector<double> tempInterpolationCoeffs;
+		for (auto testBBox : intersectingBBoxList) {
+            auto donorStencil = oversetMesh.elementConnectivity[testBBox];
+            vector<vector<double> > donorCoords(Dim);
+            vector<size_t> tempInterpolationStencil;
+            for (size_t iDonor = 0; iDonor < donorStencil.size(); ++iDonor) {
+                tempInterpolationStencil.push_back(donorStencil[iDonor]);
+                for (unsigned short iDim = 0; iDim < Dim; ++iDim) {
+                    donorCoords[iDim].push_back(oversetMesh.pointCoordinates[iDim][donorStencil[iDonor]]);
                 }
             }
+            vector<double> receiverCoords;
+            for (unsigned short iDim = 0; iDim < Dim; ++iDim) {
+                receiverCoords.push_back(pointCoordinates[iDim][iPoint]);
+            }
+            tempInterpolationCoeffs = interpolation_coeff(donorCoords, receiverCoords);
+			
+			validInterpolation = true; // all coeff should lie between 0 and 1
+			for (auto coeff : tempInterpolationCoeffs) {
+				validInterpolation = validInterpolation && (coeff <= 1.0) && (coeff >= 0.0);
+			}
+			if (validInterpolation == true) {
+				interpolationStencil[iPoint] = tempInterpolationStencil;
+				interpolationCoeffs[iPoint] = tempInterpolationCoeffs;
+				validBBox.push_back(testBBox);
+				break;
+			}
+			else {
+				validInterpolation = true;
+			}
         }
+        if (validBBox.size() == 0) {
+            // cerr << "Point: " << iPoint << " No interpolation stencil found. What to do ??" << endl;
+        }
+		return validBBox;
+    }
 
-        /*check removability of each point -> if neighbours can be interpolation cells and cell is bigger than overlapping cell*/
+    void MarkBoundaryDonor(DataStructure &backgroundMesh) {
+		/* iterate over all the boundaries of current overset mesh to mark donors on background mesh */
+        for (size_t iBound = 0; iBound < boundaryPoints.size(); ++iBound) {
+            /* iterate over all points in iBound*/
+            for (size_t iBoundPoint = 0; iBoundPoint < boundaryPoints[iBound].size(); ++iBoundPoint) {
+                size_t point = boundaryPoints[iBound][iBoundPoint];
+                const auto BBox = GetValidDonorBBox(backgroundMesh, point);
+                if (BBox.size() == 0) {
+					cerr << "Point: " << point << " No interpolation stencil found for boundary of overset mesh." << endl;
+				}
+				for (auto iPoint : backgroundMesh.elementConnectivity[BBox[0]]) {
+					// cout << "Marking iPoint = " << iPoint << " as donor " << endl;
+					backgroundMesh.pointType[iPoint] = INTERPOLATION_DONOR;
+					/* mark all neighbors as required (for complete stencil of donor)*/
+					for (auto neighborPoint : backgroundMesh.neighborPointsOfPoint[iPoint]) {
+						if (backgroundMesh.pointType[neighborPoint] == INTERPOLATION_DONOR) {
+							continue;
+						}
+						backgroundMesh.pointType[neighborPoint] = DONOR_BUFFER; /*donor buffer*/
+					}
+				}
+            }
+        }
+	}
+
+	void HoleCutting(const DataStructure& oversetMesh) {
+		/* does a type of holecutting / removal of coarse cells where overlapping finer cells are present*/
+		/*check removability of each point -> if neighbours can be interpolation cells and cell is bigger than overlapping cell*/
         for (size_t iPoint = 0; iPoint < numberOfPoints; ++iPoint) {
             /* skip interpolation donors and it's buffer */
             if (pointType[iPoint] == INTERPOLATION_DONOR || pointType[iPoint] == DONOR_BUFFER) {
@@ -573,14 +616,13 @@ class DataStructure {
                     neighborsCanBeInterpolated = false;
                     break;
                 }
-                auto pointBBox = GetPointBBox(neighborPoint);
-                const auto BBox = oversetMesh.adtBoundingBox.searchADT(pointBBox);
+                const auto BBox = GetValidDonorBBox(oversetMesh, neighborPoint);
                 if (BBox.size() == 0) {
                     neighborsCanBeInterpolated = false;
                 }
             }
             if (neighborsCanBeInterpolated) {
-                pointType[iPoint] = UNUNSED;  // iPoint becomes unused
+                pointType[iPoint] = UNUSED;  // iPoint becomes unused
                 for (auto neighborPoint : neighborPointsOfPoint[iPoint]) {
                     if (pointType[neighborPoint] != CALCULATED) {
                         continue;
@@ -603,35 +645,6 @@ class DataStructure {
         }
     }
 
-    void StoreInterpolationStencil(const DataStructure &oversetMesh) {
-        for (size_t iPoint = 0; iPoint < numberOfPoints; ++iPoint) {
-            /* skip points which are not interpolated*/
-            if (pointType[iPoint] != INTERPOLATION_RECIEVER) {
-                continue;
-            }
-            auto pointBBox = GetPointBBox(iPoint);
-            const auto BBox = oversetMesh.adtBoundingBox.searchADT(pointBBox);
-            if (BBox.size() == 0) {
-                cerr << " No donor found for interpolation marked point." << endl;
-            } else {
-                // interpolationStencil[iPoint].push_back(BBox[0]);
-                auto donorStencil = oversetMesh.elementConnectivity[BBox[0]];
-                vector<vector<double> > donorCoords(Dim);
-                for (size_t iDonor = 0; iDonor < donorStencil.size(); ++iDonor) {
-                    interpolationStencil[iPoint].push_back(donorStencil[iDonor]);
-                    for (unsigned short iDim = 0; iDim < Dim; ++iDim) {
-                        donorCoords[iDim].push_back(oversetMesh.pointCoordinates[iDim][donorStencil[iDonor]]);
-                    }
-                }
-                vector<double> receiverCoords;
-                for (unsigned short iDim = 0; iDim < Dim; ++iDim) {
-                    receiverCoords.push_back(pointCoordinates[iDim][iPoint]);
-                }
-                interpolationCoeffs[iPoint] = interpolation_coeff(donorCoords, receiverCoords);
-            }
-        }
-    }
-
     void WriteTxtPointType(string filename = "pointType.txt") const {
         ofstream pointTypeFile(filename);
         if (!pointTypeFile.is_open()) {
@@ -643,13 +656,6 @@ class DataStructure {
             }
             pointTypeFile.close();
         }
-    }
-
-    void AdjustNxNy() {
-        /* Mesh related data structures are using 0 to Nx indexing (including halo cells)
-        but Solver is using 0 to Nx+1 based indexing to acocunt to 2 halo cells in each direction*/
-        Nx = Nx - 2;
-        Ny = Ny - 2;
     }
 };
 
@@ -718,7 +724,7 @@ void LinearInterpolation(DataStructure *rect) {
     for (int i = 1; i < rect->Nx + 1; i++) {
         for (int j = 1; j < rect->Ny + 1; j++) {
             size_t point = rect->GetPointNumber(i, j);
-            if (rect->pointType[point] == UNUNSED || rect->pointType[point] == INTERPOLATION_RECIEVER) {
+            if (rect->pointType[point] == UNUSED || rect->pointType[point] == INTERPOLATION_RECIEVER) {
                 continue;
             }
             rect->Ff[0][i][j] = (rect->Var[0][i][j] + rect->Var[0][i + 1][j]) * rect->dy * 0.5;   // East Face
@@ -838,7 +844,7 @@ void UpdateFlux(DataStructure *rect) {
     for (int i = 1; i < rect->Nx + 1; i++) {
         for (int j = 1; j < rect->Ny + 1; j++) {
             size_t point = rect->GetPointNumber(i, j);
-            if (rect->pointType[point] == UNUNSED || rect->pointType[point] == INTERPOLATION_RECIEVER) {
+            if (rect->pointType[point] == UNUSED || rect->pointType[point] == INTERPOLATION_RECIEVER) {
                 continue;
             }
             rect->Ff[0][i][j] += -rect->dt / rect->rho * (rect->Var[2][i + 1][j] - rect->Var[2][i][j]) * rect->dy / rect->dx;  // East Face
@@ -857,7 +863,7 @@ double SolveUV(DataStructure *rect, DataStructure *oversetMesh, int k) {
     for (int i = 1; i < rect->Nx + 1; i++) {
         for (int j = 1; j < rect->Ny + 1; j++) {
             size_t point = rect->GetPointNumber(i, j);
-            if (rect->pointType[point] == UNUNSED) {
+            if (rect->pointType[point] == UNUSED) {
                 continue;
             }
             if (rect->pointType[point] == CALCULATED || rect->pointType[point] == INTERPOLATION_DONOR || rect->pointType[point] == DONOR_BUFFER) {
@@ -895,7 +901,7 @@ double SolveP(DataStructure *rect, DataStructure *oversetMesh, int k = 2) {
     for (int i = 1; i < rect->Nx + 1; i++) {
         for (int j = 1; j < rect->Ny + 1; j++) {
             size_t point = rect->GetPointNumber(i, j);
-            if (rect->pointType[point] == UNUNSED) {
+            if (rect->pointType[point] == UNUSED) {
                 continue;
             }
             if (rect->pointType[point] == CALCULATED || rect->pointType[point] == INTERPOLATION_DONOR || rect->pointType[point] == DONOR_BUFFER) {
@@ -934,7 +940,7 @@ void CorrectVelocity(DataStructure *rect) {
     for (int i = 1; i < rect->Nx + 1; i++) {
         for (int j = 1; j < rect->Ny + 1; j++) {
             size_t point = rect->GetPointNumber(i, j);
-            if (rect->pointType[point] == UNUNSED || rect->pointType[point] == INTERPOLATION_RECIEVER) {
+            if (rect->pointType[point] == UNUSED || rect->pointType[point] == INTERPOLATION_RECIEVER) {
                 continue;
             }
             k = 0;
@@ -1061,13 +1067,11 @@ void Solve(DataStructure *rect, DataStructure *oversetMesh) {
 
 int main() {
     DataStructure bgMesh(0.0, 0.0, 0.0 * PI / 180.0, 1.0, 1.0, 100, 100);
-    DataStructure compMesh(0.425, 0.425, 30.0 * PI / 180.0, 0.4, 0.4, 40, 40);
-    bgMesh.MarkOversetBoundaryDonors(compMesh);
+    DataStructure compMesh(0.425, 0.425, 0.0 * PI / 180.0, 0.4, 0.4, 40, 40);
+    compMesh.MarkBoundaryDonor(bgMesh);
+	bgMesh.HoleCutting(compMesh);
     bgMesh.MarkBoundaryPointType(BC_SPECIFIED);
     compMesh.MarkBoundaryPointType(INTERPOLATION_RECIEVER);
-
-    bgMesh.StoreInterpolationStencil(compMesh);
-    compMesh.StoreInterpolationStencil(bgMesh);
 
     bgMesh.WriteTxtPointType("bgPtType.txt");
     compMesh.WriteTxtPointType("compPtType.txt");
