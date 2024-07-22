@@ -5,70 +5,53 @@ import matplotlib.tri as tri
 DTYPE = np.float64
 
 PI = np.pi
+plt.rcParams["font.family"] = "Times New Roman"
+plt.rcParams.update({'font.size': 14})
 
-meshNames = ["bg", "comp"] 
-mesh = np.array([(0.0, 0.0, 0.0, 1.0, 1.0, 50, 50), (0.445, 0.245, 45 * PI/180.0, 0.4, 0.4, 20, 20)])
-
-l = [5, 1.5]
-w = [5, 1.5]
-mulFact = 2
-nx = np.array([20, 6])*mulFact
-ny = np.array([20, 6])*mulFact
-x0 = [0, l[0]/3]
-y0 = [0, w[0]/3]
-theta = np.array([0, -25]) * PI/180.0 # counter-clock rotation
+meshNames = [#"singleBlock", 
+            "bg", "comp"] 
+mulFac = 5
+mesh = ((0.0, 0.0, 0.0 * PI/180.0, 1.0, 1.0, 10*mulFac, 10*mulFac),
+        # (0.0, 0.0, 0.0 * PI/180.0, 1.0, 1.0, 100, 100),
+        (0.42, 0.42, 0.0 * PI / 180.0, 0.4, 0.4, 6*mulFac, 6*mulFac))
 colours = ["k", "r", "b"]
-var_max = 200
-var_min = 100
 format = "%0.1f"
 N_levels = 20
+varNames = ["U", "V", "P"]
 
-
-print("Mesh discretization ", nx, ny, theta * 180.0/PI)
-# # shift x0, y0 origins to cell center 
-# for i in range(len(x0)):
-#     dx = l[i]/nx[i]/2 # dx/2 i.e. L/Nx/2 is added as we have values at cell center
-#     dy = w[i]/ny[i]/2
-#     x0[i] = x0[i] + dx*np.cos(theta[i]) - dy*np.sin(theta[i])
-#     y0[i] = y0[i] + dx*np.sin(theta[i]) + dy*np.cos(theta[i])
-
-def temp_contour(title, filename, x_label = '$x$', y_label = '$y$'):
+def fieldVarContour(title, filename, k=0):
+    print("Potting - " + varNames[k])
+    global N_levels
     # fig = plt.figure(figsize=(6 + 3, 6 * l[0]/w[0] + 2))
     # Create figure and axes
-    fig, ax = plt.subplots(figsize=(6 + 3, 6 * l[0]/w[0] + 2))
+    fig, ax = plt.subplots(figsize=(6 + 3, 6 * 1 + 2))
     ax.tick_params(left=False, bottom=False, labelbottom=False, labelleft=False)
     for idx, mesh_name in enumerate(meshNames):
-        meshIdx = idx
-        meshDetails = mesh[meshIdx]
-        xOrgin, yOrigin = meshDetails[0], meshDetails[1]
-        Theta = meshDetails[2]
-        L, W = meshDetails[3], meshDetails[4]
-        Nx, Ny = int(meshDetails[5]), int(meshDetails[6])
-        x0[idx], y0[idx] = xOrgin, yOrigin
-        theta[idx] = Theta
-
+        meshDetails = mesh[idx]
+        xOrigin, yOrigin, Theta, L, W, Nx, Ny = list(meshDetails)
+        Nx, Ny = int(Nx)+2, int(Ny)+2
+        print("Mesh '"+mesh_name+"' discretization- ", Nx, Ny, Theta * 180.0/PI, "deg")
+        
         # Load data
-        Tn1 = np.loadtxt("num_mesh_"+mesh_name+".txt", dtype=DTYPE) 
+        field_var = np.loadtxt("./SIMPLE/output_Upwind_"+mesh_name+"Mesh.dat", comments='#', dtype=DTYPE)
+        # k = 0
+        field_var = field_var[k*Ny:(k+1)*Ny, :]
+        # print(Tn1.shape) 
 
-        # L = l[idx]
-        # W = l[idx]
-        # Nx = nx[idx]
-        # Ny = ny[idx]
-
-        # Plotting temperature
-        field_var = Tn1
-        # field_var = np.array(field_var).T
-        # field_var = np.flip(field_var, axis=0)
+        # generate the mesh for plotting
         xAxis = np.linspace(0, L, Nx) 
         yAxis = np.linspace(0, W, Ny)
         _xGrid, _yGrid = np.meshgrid(xAxis, yAxis)
-        xGrid = x0[idx] + _xGrid * np.cos(theta[idx]) - _yGrid * np.sin(theta[idx])
-        yGrid = y0[idx] + _xGrid * np.sin(theta[idx]) + _yGrid * np.cos(theta[idx])
+        _xGrid = _xGrid + L/Nx/2
+        _yGrid = _yGrid + W/Ny/2
+        xGrid = xOrigin + _xGrid * np.cos(Theta) - _yGrid * np.sin(Theta)
+        yGrid = yOrigin + _xGrid * np.sin(Theta) + _yGrid * np.cos(Theta)
         
-        # remove unused cells which have -1 value
+        # remove masked/unused cells
+        pointMask = np.loadtxt("./SIMPLE/"+mesh_name+"PtType.txt")
         xGrid, yGrid = xGrid.flatten(), yGrid.flatten()
         field_var = field_var.flatten()
-        cellTypeMask = np.where(field_var < 0, False, True) 
+        cellTypeMask = np.where((pointMask == 0), False, True) 
         xGrid = xGrid[cellTypeMask]
         yGrid = yGrid[cellTypeMask]
         field_var = field_var[cellTypeMask]
@@ -78,32 +61,36 @@ def temp_contour(title, filename, x_label = '$x$', y_label = '$y$'):
         y_rem = yGrid[triang_Grid.triangles] - np.roll(yGrid[triang_Grid.triangles], 1, axis=1)
         maxi = np.max(np.sqrt(x_rem**2 + y_rem**2), axis=1).reshape(-1)
         triang_Grid.set_mask((maxi > np.hypot(L/Nx, W/Ny)*1.1))
+        # # triang_Grid.set_mask(np.all(cellTypeMask[triang_Grid.triangles], axis=1)) # np.hypot(L/Nx, W/Ny)*1.1
 
-
-
+        if idx == 0:
+            var_max = np.sort(np.unique(field_var.flatten()))[-5]
+            var_min = field_var.min()
+            if k == 2:
+                var_max = 0.8*var_max 
+                # var_min = 0.8*var_min
+                N_levels = N_levels * 5
+            print(var_max, var_min)
         # Plotting field variable
-        LEVELS = np.linspace(var_min, var_max, N_levels, endpoint=True)
-        # contour = plt.tricontour(xGrid.flatten(), yGrid.flatten(), field_var.flatten(), levels = LEVELS, colors=colours[idx])
+        # k = 2 is pressure, which requries more contour lines for proper visulization
+
+        LEVELS = np.linspace(var_min, var_max, N_levels)
         contour = plt.tricontour(triang_Grid, field_var.flatten(), levels = LEVELS, colors=colours[idx])
         plt.clabel(contour, inline = 1)
-        ax.add_artist(plt.Rectangle((x0[idx], y0[idx]), L, W, angle = theta[idx]*180/PI,linewidth = 2, facecolor = "none", edgecolor=colours[idx]))
         
+        # contour = plt.tricontour(triang_Grid, field_var.flatten(), levels = LEVELS)
+        ax.add_artist(plt.Rectangle((xOrigin + L/Nx/2, yOrigin + W/Ny/2), L, W, angle = Theta * 180/PI,linewidth = 2, facecolor = "none", edgecolor=colours[idx]))
         # plt.xlabel(x_label)
         # plt.ylabel(y_label)
-        # plt.show()
     # plt.colorbar(ticks = np.linspace(var_min, var_max, N_levels, endpoint=True), format = format)
-    
-    # ax.set_xlabel('100 C')
-    # fig.supylabel('200 C', x=0.92, y=0.5)
-    # fig.supxlabel('200 C', x=0.5, y=0.90)
-    # ax.set_ylabel('200 C')
-    # plt.show()
-    plt.savefig(filename)
-    fig.suptitle(title)
+    fig.suptitle(title + "-" + varNames[k])
+    plt.savefig(filename+"_"+varNames[k])
+    # if k == 2:
+    #     plt.show()
     plt.close()
 
-temp_contour("Temp contour for 2d plate", "temp_overset") 
-# # temp_contour(Tn1, "Temp contour for 2d plate mesh "+mesh_no, "temp_mesh"+mesh_no)
+for k in range(3):
+    fieldVarContour("NS contour for 2d plate", "lid_overset", k) 
 
 def analytical_sol(xGrid, yGrid, Nx, Ny):
     T2, T1 = 100.0, 200.0
