@@ -339,6 +339,8 @@ class DataStructure {
     vector<vector<vector<double> > > Var;
     vector<vector<vector<double> > > VarOld;
     vector<vector<vector<double> > > Ff;
+    vector<vector<double> > Sf;
+
     vector<double> Init;
     vector<double> residual;
 
@@ -389,6 +391,17 @@ class DataStructure {
         Init.resize(nVar, 0.0);
         Var.resize(nVar);
         VarOld.resize(nVar);
+
+        /* normal vector for faces. No of faces per cell = 4  i=0,1,2,3 -> E,N,W,S*/
+        Sf.resize(2 * Dim);
+        for (int k = 0; k < (2 * Dim); k++) {
+            Sf[k].resize(Dim);
+        }
+        /* east */
+        for (int k = 0; k < (2*Dim); ++k) {
+            Sf[k][0] = cos(theta + double(k) * 90.0 * PI/180.0); // i comp
+            Sf[k][1] = sin(theta + double(k) * 90.0 * PI/180.0); // j comp
+        }
 
         interpolationStencil.resize(numberOfPoints);
         interpolationCoeffs.resize(numberOfPoints);
@@ -758,16 +771,32 @@ void ApplyBC(DataStructure *rect, int k, DataStructure *oversetMesh) {
 }
 
 void LinearInterpolation(DataStructure *rect) {
+    const vector<double> area = {rect->dy, rect->dx};
     for (int i = 1; i < rect->Nx + 1; i++) {
         for (int j = 1; j < rect->Ny + 1; j++) {
             size_t point = rect->GetPointNumber(i, j);
             if (rect->pointType[point] == UNUSED || rect->pointType[point] == INTERPOLATION_RECIEVER) {
                 continue;
             }
-            rect->Ff[0][i][j] = (rect->Var[0][i][j] + rect->Var[0][i + 1][j]) * rect->dy * 0.5;   // East Face
-            rect->Ff[1][i][j] = (rect->Var[1][i][j] + rect->Var[1][i][j + 1]) * rect->dx * 0.5;   // North Face
-            rect->Ff[2][i][j] = -(rect->Var[0][i][j] + rect->Var[0][i - 1][j]) * rect->dy * 0.5;  // West Face
-            rect->Ff[3][i][j] = -(rect->Var[1][i][j] + rect->Var[1][i][j - 1]) * rect->dx * 0.5;  // South Face
+            
+            for (int k = 0; k < (rect->Dim); ++k) { // East and North Face
+                rect->Ff[k][i][j] = 0;
+                double u_avg = (rect->Var[0][i][j] + rect->Var[0][i + 1][j]) * 0.5;
+                double v_avg = (rect->Var[1][i][j] + rect->Var[1][i][j + 1]) * 0.5;
+                double face_area = area[k];
+                rect->Ff[k][i][j] = (u_avg * rect->Sf[k][0] + v_avg * rect->Sf[k][1]) * face_area;   
+            }
+            for (int k = rect->Dim; k < (2*rect->Dim); ++k) { // West and South Face
+                rect->Ff[k][i][j] = 0;
+                double u_avg = (rect->Var[0][i - 1][j] + rect->Var[0][i][j]) * 0.5;
+                double v_avg = (rect->Var[1][i][j - 1] + rect->Var[1][i][j]) * 0.5;
+                double face_area = area[k-rect->Dim];
+                rect->Ff[k][i][j] = (u_avg * rect->Sf[k][0] + v_avg * rect->Sf[k][1]) * face_area;
+            }
+            // rect->Ff[0][i][j] = (rect->Var[0][i][j] + rect->Var[0][i + 1][j]) * rect->dy * 0.5;   // East Face
+            // rect->Ff[1][i][j] = (rect->Var[1][i][j] + rect->Var[1][i][j + 1]) * rect->dx * 0.5;   // North Face
+            // rect->Ff[2][i][j] = -(rect->Var[0][i][j] + rect->Var[0][i - 1][j]) * rect->dy * 0.5;  // West Face
+            // rect->Ff[3][i][j] = -(rect->Var[1][i][j] + rect->Var[1][i][j - 1]) * rect->dx * 0.5;  // South Face
         }
     }
 }
@@ -873,6 +902,7 @@ void Quick(DataStructure *rect, double *Fc, double *ap_c, int i, int j, int k) {
 }
 
 void DiffusiveFlux(DataStructure *rect, double *Fd, double *ap_d, int i, int j, int k) {
+    // double east_face = 
     *Fd = rect->volp * ((rect->Var[k][i + 1][j] - 2.0 * rect->Var[k][i][j] + rect->Var[k][i - 1][j]) / (rect->dx * rect->dx) + (rect->Var[k][i][j + 1] - 2.0 * rect->Var[k][i][j] + rect->Var[k][i][j - 1]) / (rect->dy * rect->dy));
     *ap_d = -rect->volp * (2.0 / (rect->dx * rect->dx) + 2.0 / (rect->dy * rect->dy));
 }
@@ -1087,7 +1117,7 @@ void Solve(DataStructure *rect, DataStructure *oversetMesh) {
 int main() {
     const int mulFac = 5;
     DataStructure bgMesh(0.0, 0.0, 0.0 * PI / 180.0 , 1.0, 1.0, 10*mulFac, 10*mulFac);
-    DataStructure compMesh(0.4, 0.4, 1.0 * PI / 180.0, 0.4, 0.4, 4*mulFac, 4*mulFac);
+    DataStructure compMesh(0.42, 0.42, 0.0 * PI / 180.0, 0.4, 0.4, 6*mulFac, 6*mulFac);
 
     compMesh.MarkBoundaryDonor(bgMesh);
     // bgMesh.HoleCutting(compMesh);
