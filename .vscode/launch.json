@@ -8,7 +8,7 @@
       "type": "lldb",
       "request": "launch",
       "name": "Debug (Clang/LLDB)",
-      "program": "${workspaceFolder}/${fileBasenameNoExtension}",
+      "program": "${fileDirname}/${fileBasenameNoExtension}",
       "args": [],
       "cwd": "${workspaceFolder}",
       "preLaunchTask": "C/C++: g++-14 build active file"

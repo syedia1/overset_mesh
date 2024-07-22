@@ -64,6 +64,10 @@
     "system_error": "cpp",
     "type_traits": "cpp",
     "utility": "cpp",
-    "format": "cpp"
+    "format": "cpp",
+    "version": "cpp",
+    "chrono": "cpp",
+    "set": "cpp",
+    "unordered_set": "cpp"
   }
 }

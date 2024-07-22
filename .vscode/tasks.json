@@ -6,14 +6,12 @@
         "label": "C/C++: g++-14 build active file",
         "command": "/opt/homebrew/bin/g++-14",
         "args": [
+            "-Wall",
             "-g",
             "${fileDirname}/${fileBasenameNoExtension}.cpp",
             "-o",
             "${fileDirname}/${fileBasenameNoExtension}"
         ],
-        "options": {
-            "cwd": "/usr/bin"
-        },
         "problemMatcher": [
             "$gcc"
         ],
