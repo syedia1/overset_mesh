@@ -12,7 +12,7 @@ PI = np.pi
 # mesh_file = np.genfromtxt("rect-0000-100x100"+".su2", DTYPE, skip_header=pow(100,2)+2, skip_footer=)
 
 """ ----- Start ----- SU2 Mesh Input  """
-# with open("/Users/zlatangg/Documents/Overset/overset_mesh/SU2/mesh su2/rect-0000-100x100.su2", "r") as f:
+# with open("SU2/mesh su2/rect-0000-100x100.su2", "r") as f:
 #   nDim, nElem, nPoint = 0,0,0
 #   lines = f.readlines()
 #   for i in range(len(lines)):
@@ -56,8 +56,8 @@ for meshIdx in range(2):
     xLocal, yLocal = np.meshgrid(_x, _y)
     x = xOrgin + xLocal*np.cos(theta) - yLocal*np.sin(theta)
     y = yOrigin + xLocal*np.sin(theta) + yLocal*np.cos(theta)
-
-    pointTypeData = np.loadtxt("/Users/zlatangg/Documents/Overset/overset_mesh/SIMPLE/"+meshNames[meshIdx]+"PtType.txt")
+        
+    pointTypeData = np.loadtxt("Navier Stokes 2D/"+meshNames[meshIdx]+"PtType.txt")
     print(pointTypeData.shape)
 
 

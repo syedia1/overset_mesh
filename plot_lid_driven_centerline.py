@@ -59,7 +59,7 @@ def centerline(title, filename, velComp):
         print("Mesh '"+mesh_name+"' discretization- ", Nx, Ny, Theta * 180.0/PI, "deg")
 
         # Load data
-        varData = np.loadtxt("./SIMPLE/output_Upwind_"+mesh_name+"Mesh.dat", comments='#', dtype=DTYPE)
+        varData = np.loadtxt("Navier Stokes 2D/output_Upwind_"+mesh_name+"Mesh.dat", comments='#', dtype=DTYPE)
         varData = varData[k*Ny:(k+1)*Ny, :]
 
         xAxis = np.linspace(0, L, Nx) 
@@ -70,7 +70,7 @@ def centerline(title, filename, velComp):
         xGrid = xOrigin + _xGrid * np.cos(Theta) - _yGrid * np.sin(Theta)
         yGrid = yOrigin + _xGrid * np.sin(Theta) + _yGrid * np.cos(Theta)
 
-        pointMask = np.loadtxt("./SIMPLE/"+mesh_name+"PtType.txt")
+        pointMask = np.loadtxt("Navier Stokes 2D/"+mesh_name+"PtType.txt")
         cellTypeMask = np.where((pointMask == 0), False, True)
         field_var = varData.flatten()
         field_var[np.invert(cellTypeMask)] = np.nan

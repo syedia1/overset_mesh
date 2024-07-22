@@ -663,8 +663,8 @@ void oversetSolver(){
   cout << "Final Errors  = " << " RMS_Bg = " <<  rmsBg << " RMS_Comp = " <<  rmsComp << "\n";
   cout << "Total Iterations = " << n << endl;
 
-  bgMesh.SaveToTxt("./num_mesh_bg.txt");
-  compMesh.SaveToTxt("./num_mesh_comp.txt");
+  bgMesh.SaveToTxt("num_mesh_bg.txt");
+  compMesh.SaveToTxt("num_mesh_comp.txt");
 }
 
 void vecToText(const vec2d& T, string filename) {

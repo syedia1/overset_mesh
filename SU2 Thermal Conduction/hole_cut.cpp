@@ -718,8 +718,8 @@ class SU2Mesh {
 };
  
 int main() {
-  SU2Mesh bg_mesh("/Users/zlatangg/Documents/Overset/overset_mesh/SU2/mesh su2/rect-0000-100x100.su2");
-  SU2Mesh comp_mesh("/Users/zlatangg/Documents/Overset/overset_mesh/SU2/mesh su2/rect-0505-30x30.su2");
+  SU2Mesh bg_mesh("./mesh su2/rect-0000-100x100.su2");
+  SU2Mesh comp_mesh("./mesh su2/rect-0505-30x30.su2");
   cout.width(std::numeric_limits<double>::digits10+2);
   cout.precision(std::numeric_limits<double>::digits10+2);
   // bg_mesh.PrintMeshDetails();

@@ -33,7 +33,7 @@ def fieldVarContour(title, filename, k=0):
         print("Mesh '"+mesh_name+"' discretization- ", Nx, Ny, Theta * 180.0/PI, "deg")
         
         # Load data
-        field_var = np.loadtxt("./SIMPLE/output_Upwind_"+mesh_name+"Mesh.dat", comments='#', dtype=DTYPE)
+        field_var = np.loadtxt("Navier Stokes 2D/output_Upwind_"+mesh_name+"Mesh.dat", comments='#', dtype=DTYPE)
         # k = 0
         field_var = field_var[k*Ny:(k+1)*Ny, :]
         # print(Tn1.shape) 
@@ -48,7 +48,7 @@ def fieldVarContour(title, filename, k=0):
         yGrid = yOrigin + _xGrid * np.sin(Theta) + _yGrid * np.cos(Theta)
         
         # remove masked/unused cells
-        pointMask = np.loadtxt("./SIMPLE/"+mesh_name+"PtType.txt")
+        pointMask = np.loadtxt("Navier Stokes 2D/"+mesh_name+"PtType.txt")
         xGrid, yGrid = xGrid.flatten(), yGrid.flatten()
         field_var = field_var.flatten()
         cellTypeMask = np.where((pointMask == 0), False, True) 
