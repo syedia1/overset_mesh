@@ -61,7 +61,7 @@ for meshIdx in range(2):
     print(pointTypeData.shape)
 
 
-    pointTypeLabels = ["unused", "calculated", "donor", "receiver", "donor buffer", "bc specified"];
+    pointTypeLabels = ["unused", "calculated", "donor", "receiver", "donor buffer", "bc specified"]
     pointType = np.linspace(-0.5, 5.5, len(pointTypeLabels)+1)
     pointTypeLabels = [str(int(m))+" : "+n for m,n in zip(pointType+0.5, pointTypeLabels)]
     cmap = mpl.colormaps["turbo"]
@@ -71,9 +71,7 @@ for meshIdx in range(2):
     imageScale = np.floor([Nx/mesh[1][-2], Ny/mesh[1][-1]])
     fig, ax = plt.subplots(figsize=(7 * imageScale[0], 5*imageScale[1]))
     im = ax.scatter(x, y, c=pointTypeData, cmap=cmap, norm=norm)
-    # im = ax.plot(x, y)
     cbar = fig.colorbar(im, ax=ax)
     cbar.set_ticks(ticks=pointType[:-1]+0.5, labels=pointTypeLabels)
-    # plt.show()
     fig.savefig(meshNames[meshIdx]+"HoleCut.png", bbox_inches ="tight", pad_inches = 0.2)
 

@@ -141,9 +141,6 @@ class ADT {
             /* Heirarchy cycling -> (x_min, y_min, z_min, x_max, y_max, z_max)*/
             i = elementHeirarchy % 4; /* For 2d cycle with 4 values*/
             /* node with equal values are put on left branch*/
-            // if (floatEqual(current->bBoxCoordinates[i], node->bBoxCoordinates[i])) {
-            //   current = current->left;
-            // } else
             if (current->bBoxCoordinates[i] < node->bBoxCoordinates[i]) {
                 current = current->right;
             } else {
@@ -153,9 +150,6 @@ class ADT {
         }
         if (parent == nullptr) {
             root = node;
-            // } else if (floatEqual(parent->bBoxCoordinates[i], node->bBoxCoordinates[i])) {
-            //   parent->left = node;
-            // } else
         } else if (parent->bBoxCoordinates[i] < node->bBoxCoordinates[i]) {
             parent->right = node;
         } else {
@@ -187,15 +181,10 @@ class ADT {
                 /* check intersection of current node*/
                 intersect = true;
                 for (unsigned short iDim = 0; iDim < SU2_BBOX_SIZE / 2; iDim++) {
-                    // intersect = intersect && (testBBox[iDim] < current->bBoxCoordinates[iDim+SU2_BBOX_SIZE/2] || floatEqual(testBBox[iDim], current->bBoxCoordinates[iDim+SU2_BBOX_SIZE/2]));
-                    // intersect = intersect && (testBBox[iDim+SU2_BBOX_SIZE/2] > current->bBoxCoordinates[iDim] || floatEqual(testBBox[iDim+SU2_BBOX_SIZE/2], current->bBoxCoordinates[iDim]));
                     intersect = intersect && (testBBox[iDim] <= current->bBoxCoordinates[iDim + SU2_BBOX_SIZE / 2]);
                     intersect = intersect && (testBBox[iDim + SU2_BBOX_SIZE / 2] >= current->bBoxCoordinates[iDim]);
                 }
-                // intersect = intersect && testBBox[0] <= current->bBoxCoordinates[0+SU2_BBOX_SIZE/2];
-                // intersect = intersect && testBBox[1] <= current->bBoxCoordinates[1+SU2_BBOX_SIZE/2];
-                // intersect = intersect && testBBox[2] >= current->bBoxCoordinates[2-SU2_BBOX_SIZE/2];
-                // intersect = intersect && testBBox[3] >= current->bBoxCoordinates[3-SU2_BBOX_SIZE/2];
+
                 if (intersect) {
                     intersectingBBox.push_back(current->elementIndex);
                     // cout << "intersection found with element: " << current->elementIndex << endl;
@@ -206,31 +195,23 @@ class ADT {
                 if (i < SU2_BBOX_SIZE / 2) {
                     /*curr->left is always searched as the left has min coords lower than current which gives no info on intersection */
                     searchQ.push(make_pair(current->left, currHeirarchy + 1));
-                    // if (floatEqual(testBBox[i+SU2_BBOX_SIZE/2], current->bBoxCoordinates[i])) {
-                    //   current = current->right;
-                    // }
                     /*Test _max < Current _min*/
                     if (testBBox[i + SU2_BBOX_SIZE / 2] < current->bBoxCoordinates[i]) {
                         current = nullptr;
                     } else {
                         current = current->right;
                     }
-                    // searchQ.push(make_pair(current->right, currHeirarchy));
                 }
                 /*branching based on maximum coordinate*/
                 else {
                     /*curr->right is always searched as the right has max coords higher than current which gives no info on intersection */
                     searchQ.push(make_pair(current->right, currHeirarchy + 1));
-                    // if (floatEqual(testBBox[i-SU2_BBOX_SIZE/2], current->bBoxCoordinates[i])) {
-                    //   current = current->left;
-                    // }
                     /*Test _min > Current _max*/
                     if (testBBox[i - SU2_BBOX_SIZE / 2] > current->bBoxCoordinates[i]) {
                         current = nullptr;
                     } else {
                         current = current->left;
                     }
-                    // searchQ.push(make_pair(current->left, currHeirarchy));
                 }
                 // current = nullptr;
                 currHeirarchy = currHeirarchy + 1;
@@ -252,13 +233,6 @@ class ADT {
         q.push(root);
 
         while (q.empty() == false) {
-            // node_adt * node = q.front();
-            // cout << node->elementIndex << " ";
-            // q.pop();
-            // if (node->left != nullptr)
-            //     q.push(node->left);
-            // if (node->right != nullptr)
-            //     q.push(node->right);
             int count = q.size();
             while (count > 0) {
                 node_adt *node = q.front();
@@ -702,9 +676,6 @@ void CopyNewtoOld(DataStructure *rect) {
 void InterpolateCells(DataStructure *rect, DataStructure *oversetMesh, int k) {
     for(size_t point : rect->interpolatedPoints) {
         auto [i, j] = rect->GetijFromPointNumber(point);
-        // if (k != 2) {
-        // 	rect->Var[k][i][j] = 0.0;
-        // }
         for (unsigned short iDonor = 0; iDonor < rect->interpolationStencil[point].size(); ++iDonor) {
             auto donorPointNumber = rect->interpolationStencil[point][iDonor];
             auto [_iDonor, _jDonor] = oversetMesh->GetijFromPointNumber(donorPointNumber);
@@ -804,11 +775,6 @@ void LinearInterpolation(DataStructure *rect) {
 void initialize(DataStructure *rect, DataStructure *oversetMesh) {
     // initializing interior values
     for (int k = 0; k < rect->nVar; k++) {
-        // for (int i = 1; i < rect->Nx + 1; i++) {
-        //     for (int j = 1; j < rect->Ny + 1; j++) {
-        //         rect->Var[k][i][j] = rect->Init[k];
-        //     }
-        // }
         ApplyBC(rect, k, oversetMesh);
     }
 
@@ -902,7 +868,6 @@ void Quick(DataStructure *rect, double *Fc, double *ap_c, int i, int j, int k) {
 }
 
 void DiffusiveFlux(DataStructure *rect, double *Fd, double *ap_d, int i, int j, int k) {
-    // double east_face = 
     *Fd = rect->volp * ((rect->Var[k][i + 1][j] - 2.0 * rect->Var[k][i][j] + rect->Var[k][i - 1][j]) / (rect->dx * rect->dx) + (rect->Var[k][i][j + 1] - 2.0 * rect->Var[k][i][j] + rect->Var[k][i][j - 1]) / (rect->dy * rect->dy));
     *ap_d = -rect->volp * (2.0 / (rect->dx * rect->dx) + 2.0 / (rect->dy * rect->dy));
 }
@@ -1096,7 +1061,6 @@ void Solve(DataStructure *rect, DataStructure *oversetMesh) {
     bool mesh1 = true, mesh2 = false;
     do {
         ImplicitSolve(rect, oversetMesh, iter);
-        // ImplicitSolve(oversetMesh, rect);
         if (OuterIterLogFreq(iter)) {
             cout << "OuterIter: " << std::setw(5) << iter;
             cout << " NS-RMS: ";

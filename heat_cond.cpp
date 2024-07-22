@@ -79,9 +79,6 @@ class ADT{
         /* Heirarchy cycling -> (x_min, y_min, z_min, x_max, y_max, z_max)*/
         i = elementHeirarchy % 4; /* For 2d cycle with 4 values*/
         /* node with equal values are put on left branch*/
-        // if (floatEqual(current->bBoxCoordinates[i], node->bBoxCoordinates[i])) {
-        //   current = current->left;
-        // } else 
         if (current->bBoxCoordinates[i] < node->bBoxCoordinates[i]) {
           current = current->right;
         } else {
@@ -91,9 +88,6 @@ class ADT{
       }
       if (parent == nullptr) {
         root = node;
-      // } else if (floatEqual(parent->bBoxCoordinates[i], node->bBoxCoordinates[i])) {
-      //   parent->left = node;
-      // } else 
       } else if (parent->bBoxCoordinates[i] < node->bBoxCoordinates[i]) {
         parent->right = node;
       } else {
@@ -125,15 +119,9 @@ class ADT{
           /* check intersection of current node*/
           intersect = true;
           for (unsigned short iDim = 0; iDim < SU2_BBOX_SIZE/2; iDim++) {
-            // intersect = intersect && (testBBox[iDim] < current->bBoxCoordinates[iDim+SU2_BBOX_SIZE/2] || floatEqual(testBBox[iDim], current->bBoxCoordinates[iDim+SU2_BBOX_SIZE/2]));
-            // intersect = intersect && (testBBox[iDim+SU2_BBOX_SIZE/2] > current->bBoxCoordinates[iDim] || floatEqual(testBBox[iDim+SU2_BBOX_SIZE/2], current->bBoxCoordinates[iDim]));
             intersect = intersect && (testBBox[iDim] <= current->bBoxCoordinates[iDim+SU2_BBOX_SIZE/2]);
             intersect = intersect && (testBBox[iDim+SU2_BBOX_SIZE/2] >= current->bBoxCoordinates[iDim]);
           }
-          // intersect = intersect && testBBox[0] <= current->bBoxCoordinates[0+SU2_BBOX_SIZE/2];
-          // intersect = intersect && testBBox[1] <= current->bBoxCoordinates[1+SU2_BBOX_SIZE/2];
-          // intersect = intersect && testBBox[2] >= current->bBoxCoordinates[2-SU2_BBOX_SIZE/2];
-          // intersect = intersect && testBBox[3] >= current->bBoxCoordinates[3-SU2_BBOX_SIZE/2];
           if (intersect) {
             intersectingBBox.push_back(current->elementIndex);
             // cout << "intersection found with element: " << current->elementIndex << endl;
@@ -144,9 +132,6 @@ class ADT{
           if (i < SU2_BBOX_SIZE/2) {
             /*curr->left is always searched as the left has min coords lower than current which gives no info on intersection */
             searchQ.push(make_pair(current->left, currHeirarchy+1)); 
-            // if (floatEqual(testBBox[i+SU2_BBOX_SIZE/2], current->bBoxCoordinates[i])) {
-            //   current = current->right;
-            // }
             /*Test _max < Current _min*/
             if (testBBox[i+SU2_BBOX_SIZE/2] < current->bBoxCoordinates[i]) {
               current = nullptr;
@@ -154,15 +139,11 @@ class ADT{
             else {
               current = current->right;
             }
-            // searchQ.push(make_pair(current->right, currHeirarchy)); 
           }
           /*branching based on maximum coordinate*/
           else{
             /*curr->right is always searched as the right has max coords higher than current which gives no info on intersection */
             searchQ.push(make_pair(current->right, currHeirarchy+1)); 
-            // if (floatEqual(testBBox[i-SU2_BBOX_SIZE/2], current->bBoxCoordinates[i])) {
-            //   current = current->left;
-            // }
             /*Test _min > Current _max*/
             if (testBBox[i-SU2_BBOX_SIZE/2] > current->bBoxCoordinates[i] ) {
               current = nullptr;
@@ -170,9 +151,7 @@ class ADT{
             else {
               current = current->left;
             }
-            // searchQ.push(make_pair(current->left, currHeirarchy)); 
           }
-          // current = nullptr;
           currHeirarchy = currHeirarchy + 1;
         }
       }
@@ -192,13 +171,6 @@ class ADT{
       q.push(root);
 
       while (q.empty() == false) {
-        // node_adt * node = q.front();
-        // cout << node->elementIndex << " ";
-        // q.pop();
-        // if (node->left != nullptr)
-        //     q.push(node->left);
-        // if (node->right != nullptr)
-        //     q.push(node->right);
         int count = q.size();
         while (count > 0){
           node_adt *node = q.front();
@@ -333,7 +305,6 @@ class StructuredMesh{
       for(size_t j = 0; j < Ny-1; ++j) {
         for(size_t i = 0; i < Nx-1; ++i) {
           iElement = GetElementNumber(i, j);
-          // elementConnectivity[iElement].assign({iElement, iElement+1, iElement+1+Nx, iElement+Nx});
           elementConnectivity[iElement].assign({j*Nx + i, j*Nx + i+1, (j+1)*Nx + i+1, (j+1)*Nx + i});
           
           /* Element cartesian aligned Bounding Box */
@@ -415,8 +386,7 @@ class StructuredMesh{
       vector<size_t> elementOrderADT;
       elementOrderADT.resize(numberOfElements);
       iota(elementOrderADT.begin(), elementOrderADT.end(), 0);
-      // shuffle(elementOrderADT.begin(), elementOrderADT.end(), std::mt19937{std::random_device{}()});
-      shuffle(elementOrderADT.begin(), elementOrderADT.end(), std::mt19937{12337});
+      shuffle(elementOrderADT.begin(), elementOrderADT.end(), std::mt19937{std::random_device{}()});
 
       for (size_t randomIndex = 0; randomIndex < numberOfElements; ++randomIndex) {
         size_t LocalIndex = elementOrderADT[randomIndex];
@@ -738,7 +708,6 @@ double analyticalError(const vec2d &T, const double L, const double W, const vec
   // vecToText(xCoord, "./xCoord.txt");
   // vecToText(yCoord, "./yCoord.txt");
   return pow(error, 0.5);
-  // return error;
 }
 
 vec1d solveAxB(const vec2d &A, const vec1d &B) {
@@ -1039,7 +1008,7 @@ void solver() {
 }
 
 int main() {
-  // solver();
-  oversetSolver();
+  // solver(); // does 1 way information transfer from bg mesh to comp mesh
+  oversetSolver(); // does 2 way information transfer between bg mesh and comp mesh
   return 0;
 }
