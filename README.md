@@ -1,4 +1,4 @@
-### Overset Methodoloy
+### Overset Methodology
 
 Implementing overset methodology framework for numerically solving equations.
 
@@ -14,3 +14,9 @@ The repository work is sequentially ordered as:
 2. One-way coupling between overset grids (2D heat conduction, one way information transfer from donor mesh to receiver(finer) mesh)
 3. Two-way coupling between overset grids (2D heat conduction)
 4. Two-way coupling between overset grids (Navier Stokes)
+
+
+Additionally the following results/scripts are also present:
+1. Overset methodology - order of error analysis
+2. Sample hole-cutting results
+3. Testing convergence of infinite sums to acceptable/reasonable degree of precision
